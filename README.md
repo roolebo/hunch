@@ -55,6 +55,8 @@ Specified in [skills/tribe/PROTOCOL.md](skills/tribe/PROTOCOL.md).
 ## Agents
 
 `tribe-editor` finds the editor in tribe and runs its handler.
+`tribe-editor guard FILE` exits 2, with the reason on stderr, if FILE must
+change through the editor protocol.
 
 References:
 1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
