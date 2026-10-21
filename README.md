@@ -48,5 +48,9 @@ editors and agents. A participant's plugin states which version it implements.
   routing: human to agent, agent to center, agent to tool, tool to tool,
   environment to environment.
 
+## Editor protocol
+
+Specified in [skills/tribe/PROTOCOL.md](skills/tribe/PROTOCOL.md).
+
 References:
 1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
