@@ -64,6 +64,9 @@ Commands:
 
 Rules:
 
+- Edits never move the human's cursor or view. A change the human can see
+  appears in place; any other change is made in the background. Only `open`
+  moves the view.
 - The handler never asks the human anything.
 
 Exit status:
