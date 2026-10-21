@@ -4,16 +4,22 @@
 #   tribe set NAME VALUE
 #   tribe clear
 #   tribe get [-i|--id ID] NAME
+#   tribe find ROLE
 #
-# ID identifies a participant. Without it, get reads the caller's own
-# properties.
+# ID identifies a participant, as printed by find. Without it, get reads the
+# caller's own properties. A role has only letters, digits, - and _.
 #
 
 : ${TRIBE_PREFIX:=tribe}
 PREFIX="@${TRIBE_PREFIX}"
 
+die() {
+  echo "$*" >&2
+  exit 1
+}
+
 usage() {
-  echo "usage: $0 set NAME VALUE | $0 clear | $0 get [-i|--id ID] NAME" >&2
+  echo "usage: $0 set NAME VALUE | $0 clear | $0 get [-i|--id ID] NAME | $0 find ROLE" >&2
   exit 2
 }
 
@@ -23,6 +29,13 @@ tmux_available() {
 
 pane_available() {
   [ -n "$TMUX_PANE" ]
+}
+
+# Keep the role from breaking the tmux format in find or injecting a shell
+# command
+check_role() {
+  [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "Invalid role: $1. Use letters, digits, - and _"
 }
 
 tribe_options() {
@@ -43,6 +56,9 @@ case "$1" in
     pane_available || exit 1
     if [ $# -ne 3 ]; then
       usage
+    fi
+    if [ "$2" == role ]; then
+      check_role "$3"
     fi
     tmux set -p -t "$TMUX_PANE" "${PREFIX}_$2" "$3"
     ;;
@@ -65,6 +81,28 @@ case "$1" in
     fi
     [ -n "$target" ] || exit 1
     tmux show -p -v -t "$target" "${PREFIX}_$1" 2> /dev/null
+    ;;
+  find)
+    pane_available || exit 1
+    if [ $# -ne 2 ]; then
+      usage
+    fi
+    check_role "$2"
+    # Nearest participant with the role: the caller's window, then its
+    # session, then all sessions
+    window=""
+    session=-s
+    all=-a
+    has_role="#{==:#{${PREFIX}_role},$2}"
+    for scope in "$window" "$session" "$all"; do
+      id=$(tmux list-panes $scope -t "$TMUX_PANE" -f "$has_role" \
+        -F '#{pane_id}' | head -n 1)
+      if [ -n "$id" ]; then
+        echo "$id"
+        exit 0
+      fi
+    done
+    exit 1
     ;;
   *)
     usage
