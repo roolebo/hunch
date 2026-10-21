@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# tribe: minimal tmux implementation
+#
+#   tribe set NAME VALUE
+#   tribe clear
+#
+
+: ${TRIBE_PREFIX:=tribe}
+PREFIX="@${TRIBE_PREFIX}"
+
+usage() {
+  echo "usage: $0 set NAME VALUE | $0 clear" >&2
+  exit 2
+}
+
+tmux_available() {
+    [ -n "$TMUX_PANE" ]
+}
+
+tribe_options() {
+    tmux show -p -t "$TMUX_PANE" | cut -d ' ' -f 1 | grep "^${PREFIX}_"
+}
+
+if ! tmux_available; then
+    exit 1
+fi
+
+case "$1" in
+  is-available)
+    tmux_available
+    exit $?
+    ;;
+  set)
+    if [ $# -ne 3 ]; then
+        usage
+    fi
+    tmux set -p -t "$TMUX_PANE" "${PREFIX}_$2" "$3"
+    ;;
+  clear)
+    for option in $(tribe_options); do
+        tmux set -p -u -t "$TMUX_PANE" "$option"
+    done
+    ;;
+  *)
+    usage
+    ;;
+esac

@@ -1,0 +1,46 @@
+# tribe: Human-centric convention for GenAI
+
+Instead of building workflows around an AI harness build it around the human.
+Keep the proven ideas: Unix composition, KISS, CSP [1], text as the interface,
+small tools. LLMs also excel in the same lean environment.
+
+## Principles
+- The center is whatever the human works on. People work best focused on one
+  thing: switching between too many things breaks the natural flow.
+
+- Nothing is fixed: models, harnesses, editors, project tools, and the AI
+  tooling field itself keep changing. The aproach should be be able absorb
+  whatever comes next without redesign.
+
+- Input and output (text, voice, keystrokes, pipes, TCP, etc) are separate and
+  interchangeable
+
+## Model
+
+- Participant: a process that takes part in the work: the human, an agent,
+  a tool. Participants share no state. A participant has a role (what it is)
+  and an identity unique within its environment.
+
+- Channel: the only way participants communicate. A channel carries messages
+  between two participants, as in CSP, but is exposed to the outside where it
+  can be inspected and rewired.
+
+- Address: a URI that says how to open a channel to a participant. Each address
+  is valid within a scope: some only inside an environment, some also outside.
+  New URI schemes add new ways to connect.
+
+- Environment: a group of participants that can reach each other by addresses
+  valid inside it. An environment is itself a participant, so environments
+  connect through channels using addresses valid between them, and can nest.
+
+- Registry: an environment may keep a registry where its participants register
+  themselves: role, identity and addresses, for as long as they live.
+  A registry is optional: without one, participants learn addresses some other
+  way, e.g. from configuration or from messages.
+
+- Routing: wiring channels between participants. Composing a workflow means
+  routing: human to agent, agent to center, agent to tool, tool to tool,
+  environment to environment.
+
+References:
+1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
