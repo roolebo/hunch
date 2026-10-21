@@ -52,5 +52,9 @@ editors and agents. A participant's plugin states which version it implements.
 
 Specified in [skills/tribe/PROTOCOL.md](skills/tribe/PROTOCOL.md).
 
+## Agents
+
+`tribe-editor` finds the editor in tribe and runs its handler.
+
 References:
 1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf

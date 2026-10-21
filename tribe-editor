@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+#
+# tribe-editor: use the editor registered in tribe. Never prompts.
+#
+
+set -e
+
+die() {
+  echo "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat << EOF
+Usage: $0 <command> [args]
+
+Commands:
+  find                            Show the editor: id, address, handler
+  context                         JSON: file, cursor, mode, selection, buffers
+  selection                       Selected text, active or last
+  read BUFFER [START] [END]       Numbered lines, unsaved changes included
+  open FILE [LINE [COL]]          Show FILE to the user at LINE and COL
+  replace FILE 3<<'OLD' 4<<'NEW'  Replace the only match of OLD with NEW, save
+  create FILE <<'EOF'             Create FILE from stdin, save
+  review RANGE                    Show commits of RANGE in this repo to the user
+  reload                          Re-read files changed on disk
+EOF
+}
+
+bad_usage() {
+  usage >&2
+  exit 1
+}
+
+abspath() {
+  case "$1" in
+    /*) echo "$1" ;;
+    *) echo "$PWD/$1" ;;
+  esac
+}
+
+if [ "$1" == "-h" -o "$1" == "--help" ]; then
+  usage
+  exit 0
+fi
+[ $# -ge 1 ] || bad_usage
+
+ID=$(tribe find editor) ||
+  die "No editor registered in tribe. Start one with tribe support"
+ADDR=$(tribe get --id "$ID" addr) ||
+  die "Editor $ID has no address, restart it"
+HANDLER=$(tribe get --id "$ID" handler) ||
+  die "Editor $ID has no handler, update its tribe plugin and restart it"
+
+case "$1" in
+  find)
+    [ $# -eq 1 ] || bad_usage
+    echo "id $ID"
+    echo "addr $ADDR"
+    echo "handler $HANDLER"
+    ;;
+  context | selection)
+    [ $# -eq 1 ] || bad_usage
+    "$HANDLER" "$ADDR" "$1"
+    ;;
+  read)
+    [ $# -ge 2 -a $# -le 4 ] || bad_usage
+    BUFFER=$2
+    # A relative path becomes absolute, a buffer from context stays
+    [ ! -e "$BUFFER" ] || BUFFER=$(abspath "$BUFFER")
+    "$HANDLER" "$ADDR" read "$BUFFER" "${@:3}"
+    ;;
+  open)
+    [ $# -ge 2 -a $# -le 4 ] || bad_usage
+    "$HANDLER" "$ADDR" open "$(abspath "$2")" "${@:3}"
+    ;;
+  replace)
+    [ $# -eq 2 ] || bad_usage
+    TMP=$(mktemp -d)
+    trap 'rm -rf "$TMP"' EXIT
+    cat <&3 > "$TMP/old" || die "Old text expected on fd 3: 3<<'OLD'"
+    cat <&4 > "$TMP/new" || die "New text expected on fd 4: 4<<'NEW'"
+    "$HANDLER" "$ADDR" replace "$(abspath "$2")" "$TMP/old" "$TMP/new"
+    ;;
+  create)
+    [ $# -eq 2 ] || bad_usage
+    TMP=$(mktemp -d)
+    trap 'rm -rf "$TMP"' EXIT
+    cat > "$TMP/content"
+    "$HANDLER" "$ADDR" create "$(abspath "$2")" "$TMP/content"
+    ;;
+  review)
+    [ $# -eq 2 ] || bad_usage
+    REPO=$(git rev-parse --show-toplevel) || die "Not in a git repository: $PWD"
+    "$HANDLER" "$ADDR" review "$REPO" "$2"
+    ;;
+  reload)
+    [ $# -eq 1 ] || bad_usage
+    "$HANDLER" "$ADDR" reload
+    ;;
+  *)
+    bad_usage
+    ;;
+esac
