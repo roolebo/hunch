@@ -24,6 +24,9 @@ Terms:
                 screen columns
     OLD, NEW, TEXT
                 text, passed in a file, never on the command line
+    REPO        a working copy under version control, by its absolute path
+    RANGE       the changes to show, in the notation of REPO's version
+                control, e.g. main..topic in git
 
 Commands:
 
@@ -33,6 +36,8 @@ Commands:
     open FILE [LINE [COL]]  show FILE to the human, the cursor at LINE and COL
     replace FILE OLD NEW    replace the only match of OLD in FILE with NEW, then save
     create FILE TEXT        create FILE with TEXT, then save
+    review REPO RANGE       show the changes of RANGE in REPO to the human
+    reload                  re-read files changed on disk; unsaved ones are left alone
 
 `context` prints one JSON object, where the human is:
 
@@ -66,7 +71,7 @@ Rules:
 
 - Edits never move the human's cursor or view. A change the human can see
   appears in place; any other change is made in the background. Only `open`
-  moves the view.
+  and `review` move the view.
 - The handler never asks the human anything.
 
 Exit status:
