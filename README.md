@@ -58,5 +58,7 @@ Specified in [skills/tribe/PROTOCOL.md](skills/tribe/PROTOCOL.md).
 `tribe-editor guard FILE` exits 2, with the reason on stderr, if FILE must
 change through the editor protocol.
 
+The repo comes with the `tribe` skill for agents.
+
 References:
 1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
