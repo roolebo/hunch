@@ -1,9 +1,9 @@
 # tribe: Human-centric convention for GenAI
 
-Instead of building workflows around an AI harness build it around the human,
-to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix composition,
-KISS, CSP [\[2\]][2], text as the interface, small tools. LLMs also excel in
-the same lean environment.
+Instead of building workflows around an AI harness, build them around the
+human to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix
+composition, KISS, CSP [\[2\]][2], text as the interface, small tools. LLMs
+also excel in the same lean environment.
 
 ## Why
 
