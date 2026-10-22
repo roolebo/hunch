@@ -79,7 +79,8 @@ setup:
 - Vim is started with --servername; [vim-tribe] registers it as the editor.
 - [claude-tribe] registers Claude Code as an agent.
 - [tmux-tribe] is loaded in tmux.
-- Pipit, a dictation app, pastes speech into the terminal while a key is held.
+- [Pipit], a dictation app, pastes speech into the terminal while a key is
+  held.
 
 The human selects a function in Vim, holds the key and says "split this in
 two". Vim is in normal mode, so tmux-tribe sends the text to the agent instead
@@ -91,6 +92,28 @@ the buffer, as before.
 The terminal only carries the paste, so this works over SSH as well: tmux,
 Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
 The cursor and the selection say what "this" and "here" mean.
+
+## Getting started
+
+Needs tmux, git, jq, and Vim with +socketserver.
+
+Put `tribe` and `tribe-editor` from this repo on PATH and link
+`skills/tribe` into `~/.claude/skills`. The rest with the plugin managers
+you use:
+
+- [vim-tribe] and vim-fugitive in Vim
+- [tmux-tribe] in tmux
+- [claude-tribe] in Claude Code:
+  `/plugin install tribe --marketplace roolebo/claude-tribe`.
+
+In tmux, run `vim --servername tribe` in one pane and `claude` in another.
+Both register in tribe:
+
+    tribe-editor find
+    tribe find agent
+
+To talk to the agent from Vim, add a dictation app that pastes into the
+terminal, e.g. [Pipit] on macOS.
 
 ## Why not
 
@@ -142,6 +165,7 @@ The repo comes with the `tribe` skill for agents.
 [vim-tribe]: https://github.com/roolebo/vim-tribe
 [tmux-tribe]: https://github.com/roolebo/tmux-tribe
 [claude-tribe]: https://github.com/roolebo/claude-tribe
+[Pipit]: https://www.pipitvoice.com
 
 References:
 1. Augmenting Human Intellect: A Conceptual Framework. https://www.dougengelbart.org/pubs/papers/scanned/Doug_Engelbart-AugmentingHumanIntellect.pdf
