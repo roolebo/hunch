@@ -1,14 +1,14 @@
 # tribe: Human-centric convention for GenAI
 
 Instead of building workflows around an AI harness build it around the human,
-to augment their intellect [[1]][1]. Keep the proven ideas: Unix composition,
-KISS, CSP [[2]][2], text as the interface, small tools. LLMs also excel in the
-same lean environment.
+to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix composition,
+KISS, CSP [\[2\]][2], text as the interface, small tools. LLMs also excel in
+the same lean environment.
 
 ## Why
 
 Engelbart named the goal: augmenting human intellect, "increasing the
-capability of a man to approach a complex problem situation" [[1]][1]. He saw
+capability of a man to approach a complex problem situation" [\[1\]][1]. He saw
 the human as part of a system: a Human using Language, Artifacts, Methodology,
 in which he is Trained (H-LAM/T). The system improves as a whole, never by one
 artifact alone.
@@ -106,17 +106,17 @@ terminal, e.g. [Pipit] on macOS.
 
 ## Why not
 
-ACP, the Agent Client Protocol [[3]][3]: the editor starts the agent as its
+ACP, the Agent Client Protocol [\[3\]][3]: the editor starts the agent as its
 child and shows it in its own panel. The editor becomes the center instead of
 the human's work, and the agent lives only as long as that editor. The human
 has to use an editor that implements ACP and talk to the agent through its
 panel. Only two participants exist: one editor and its agent. Other agents,
 tools and environments have no place in it.
 
-MCP, the Model Context Protocol [[4]][4]: the AI harness is the center and
+MCP, the Model Context Protocol [\[4\]][4]: the AI harness is the center and
 everything else is its tool. Editor integrations of agents, such as Claude
-Code's, are built on it: the editor runs a server for one vendor's agent,
-found through that vendor's lock files. Each editor implements each vendor's
+Code's, are built on it: the editor runs a server for one vendor's agent, found
+through that vendor's lock files. Each editor implements each vendor's
 protocol, which is the coupling tribe avoids. It serves the model, not the
 human.
 
