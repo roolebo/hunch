@@ -70,6 +70,28 @@ agents to the system the human already has:
   routing: human to agent, agent to center, agent to tool, tool to tool,
   environment to environment.
 
+## Example: voice in Vim
+
+The human talks to an agent without leaving Vim and without new keys. The
+setup:
+
+- iTerm2 runs tmux with two panes: Vim and Claude Code.
+- Vim is started with --servername; [vim-tribe] registers it as the editor.
+- [claude-tribe] registers Claude Code as an agent.
+- [tmux-tribe] is loaded in tmux.
+- Pipit, a dictation app, pastes speech into the terminal while a key is held.
+
+The human selects a function in Vim, holds the key and says "split this in
+two". Vim is in normal mode, so tmux-tribe sends the text to the agent instead
+of the editor. The agent asks the editor what is selected, makes the change
+through the editor without moving the human's view, or prepares commits and
+opens them in Vim for review. In insert mode the same dictation types into
+the buffer, as before.
+
+The terminal only carries the paste, so this works over SSH as well: tmux,
+Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
+The cursor and the selection say what "this" and "here" mean.
+
 ## Editor protocol
 
 Specified in [skills/tribe/PROTOCOL.md](skills/tribe/PROTOCOL.md).
