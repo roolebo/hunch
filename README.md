@@ -92,6 +92,35 @@ The terminal only carries the paste, so this works over SSH as well: tmux,
 Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
 The cursor and the selection say what "this" and "here" mean.
 
+## Why not
+
+ACP, the Agent Client Protocol [3]: the editor starts the agent as its child
+and shows it in its own panel. The editor becomes the center instead of the
+human's work, and the agent lives only as long as that editor. The human has
+to use an editor that implements ACP and talk to the agent through its panel.
+Only two participants exist: one editor and its agent. Other agents, tools
+and environments have no place in it.
+
+MCP, the Model Context Protocol [4]: the AI harness is the center and
+everything else is its tool. Editor integrations of agents, such as Claude
+Code's, are built on it: the editor runs a server for one vendor's agent,
+found through that vendor's lock files. Each editor implements each vendor's
+protocol, which is the coupling tribe avoids. It serves the model, not the
+human.
+
+AI editors such as Cursor: the human gives up their editor and habits for the
+vendor's. Models, harnesses and editors keep changing, and each change means
+moving again.
+
+Agents inside an editor, as plugins: each editor rebuilds the agent, and the
+human can't use an agent from elsewhere. The agent stops with the editor.
+
+Plain tmux, sending keys to a pane: text without structure. The agent can't
+ask where the cursor is or make an edit that keeps the human's view.
+
+tribe takes ideas from all of them. It doesn't exclude them either: an ACP
+agent or an MCP server can join tribe as a participant through an adapter.
+
 ## Editor protocol
 
 Specified in [skills/tribe/PROTOCOL.md](skills/tribe/PROTOCOL.md).
@@ -117,3 +146,5 @@ The repo comes with the `tribe` skill for agents.
 References:
 1. Augmenting Human Intellect: A Conceptual Framework. https://www.dougengelbart.org/pubs/papers/scanned/Doug_Engelbart-AugmentingHumanIntellect.pdf
 2. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
+3. Agent Client Protocol. https://agentclientprotocol.com
+4. Model Context Protocol. https://modelcontextprotocol.io
