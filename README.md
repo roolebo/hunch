@@ -4,6 +4,12 @@ Instead of building workflows around an AI harness build it around the human.
 Keep the proven ideas: Unix composition, KISS, CSP [1], text as the interface,
 small tools. LLMs also excel in the same lean environment.
 
+Version 0.1.0. tribe, its registry and protocols, is a concept still being
+worked out as participants join, so it isn't ideal and will change. Until it
+settles the version stays 0.x: a breaking change bumps the minor version (0.1
+to 0.2), a compatible one the patch. 1.0 comes once it works well for several
+editors and agents. A participant's plugin states which version it implements.
+
 ## Principles
 - The center is whatever the human works on. People work best focused on one
   thing: switching between too many things breaks the natural flow.
