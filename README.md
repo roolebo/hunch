@@ -1,8 +1,9 @@
 # tribe: Human-centric convention for GenAI
 
-Instead of building workflows around an AI harness build it around the human.
-Keep the proven ideas: Unix composition, KISS, CSP [1], text as the interface,
-small tools. LLMs also excel in the same lean environment.
+Instead of building workflows around an AI harness build it around the human,
+to augment their intellect [1]. Keep the proven ideas: Unix composition, KISS,
+CSP [2], text as the interface, small tools. LLMs also excel in the same lean
+environment.
 
 Version 0.1.0. tribe, its registry and protocols, is a concept still being
 worked out as participants join, so it isn't ideal and will change. Until it
@@ -71,4 +72,5 @@ The repo comes with the `tribe` skill for agents.
 [claude-tribe]: https://github.com/roolebo/claude-tribe
 
 References:
-1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
+1. Augmenting Human Intellect: A Conceptual Framework. https://www.dougengelbart.org/pubs/papers/scanned/Doug_Engelbart-AugmentingHumanIntellect.pdf
+2. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
