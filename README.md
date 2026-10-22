@@ -1,22 +1,16 @@
 # tribe: Human-centric convention for GenAI
 
 Instead of building workflows around an AI harness build it around the human,
-to augment their intellect [1]. Keep the proven ideas: Unix composition, KISS,
-CSP [2], text as the interface, small tools. LLMs also excel in the same lean
-environment.
-
-Version 0.1.0. tribe, its registry and protocols, is a concept still being
-worked out as participants join, so it isn't ideal and will change. Until it
-settles the version stays 0.x: a breaking change bumps the minor version (0.1
-to 0.2), a compatible one the patch. 1.0 comes once it works well for several
-editors and agents. A participant's plugin states which version it implements.
+to augment their intellect [[1]][1]. Keep the proven ideas: Unix composition,
+KISS, CSP [[2]][2], text as the interface, small tools. LLMs also excel in the
+same lean environment.
 
 ## Why
 
 Engelbart named the goal: augmenting human intellect, "increasing the
-capability of a man to approach a complex problem situation" [1]. He saw the
-human as part of a system: a Human using Language, Artifacts, Methodology, in
-which he is Trained (H-LAM/T). The system improves as a whole, never by one
+capability of a man to approach a complex problem situation" [[1]][1]. He saw
+the human as part of a system: a Human using Language, Artifacts, Methodology,
+in which he is Trained (H-LAM/T). The system improves as a whole, never by one
 artifact alone.
 
 tribe grew out of practice and came to the same view. An agent is a new
@@ -33,42 +27,37 @@ agents to the system the human already has:
 - Training: the human keeps their editor, keys and habits.
 
 ## Principles
-- The center is whatever the human works on. People work best focused on one
-  thing: switching between too many things breaks the natural flow.
 
-- Nothing is fixed: models, harnesses, editors, project tools, and the AI
-  tooling field itself keep changing. The aproach should be be able absorb
-  whatever comes next without redesign.
+The center is whatever the human works on. People work best focused on one
+thing: switching between too many things breaks the natural flow.
 
-- Input and output (text, voice, keystrokes, pipes, TCP, etc) are separate and
-  interchangeable
+Nothing is fixed: models, harnesses, editors, project tools, and the AI tooling
+field itself keep changing. The approach should absorb whatever comes next
+without redesign.
+
+Input and output (text, voice, keystrokes, pipes, TCP, etc.) are separate and
+interchangeable.
 
 ## Model
 
-- Participant: a process that takes part in the work: the human, an agent,
-  a tool. Participants share no state. A participant has a role (what it is)
-  and an identity unique within its environment.
+A participant is anything that takes part in the work: the human, an editor, an
+agent, a tool. Each has a role and an id. Participants share no state.
 
-- Channel: the only way participants communicate. A channel carries messages
-  between two participants, as in CSP, but is exposed to the outside where it
-  can be inspected and rewired.
+Participants talk only through channels. A channel connects two of them, as in
+CSP, and stays visible from the outside, so it can be inspected and rewired.
 
-- Address: a URI that says how to open a channel to a participant. Each address
-  is valid within a scope: some only inside an environment, some also outside.
-  New URI schemes add new ways to connect.
+An address is a URI that says how to open a channel to a participant. Some
+addresses work only inside an environment, some outside too.
 
-- Environment: a group of participants that can reach each other by addresses
-  valid inside it. An environment is itself a participant, so environments
-  connect through channels using addresses valid between them, and can nest.
+An environment is a group of participants that can reach each other. It is a
+participant itself, so environments connect and nest.
 
-- Registry: an environment may keep a registry where its participants register
-  themselves: role, identity and addresses, for as long as they live.
-  A registry is optional: without one, participants learn addresses some other
-  way, e.g. from configuration or from messages.
+A registry is where the participants of an environment list themselves while
+they run: role, id and addresses. It is optional: addresses can also come from
+configuration or messages.
 
-- Routing: wiring channels between participants. Composing a workflow means
-  routing: human to agent, agent to center, agent to tool, tool to tool,
-  environment to environment.
+Routing wires the channels: human to agent, agent to editor, agent to tool,
+environment to environment.
 
 ## Example: voice in Vim
 
@@ -117,14 +106,14 @@ terminal, e.g. [Pipit] on macOS.
 
 ## Why not
 
-ACP, the Agent Client Protocol [3]: the editor starts the agent as its child
-and shows it in its own panel. The editor becomes the center instead of the
-human's work, and the agent lives only as long as that editor. The human has
-to use an editor that implements ACP and talk to the agent through its panel.
-Only two participants exist: one editor and its agent. Other agents, tools
-and environments have no place in it.
+ACP, the Agent Client Protocol [[3]][3]: the editor starts the agent as its
+child and shows it in its own panel. The editor becomes the center instead of
+the human's work, and the agent lives only as long as that editor. The human
+has to use an editor that implements ACP and talk to the agent through its
+panel. Only two participants exist: one editor and its agent. Other agents,
+tools and environments have no place in it.
 
-MCP, the Model Context Protocol [4]: the AI harness is the center and
+MCP, the Model Context Protocol [[4]][4]: the AI harness is the center and
 everything else is its tool. Editor integrations of agents, such as Claude
 Code's, are built on it: the editor runs a server for one vendor's agent,
 found through that vendor's lock files. Each editor implements each vendor's
@@ -156,6 +145,12 @@ change through the editor protocol.
 
 The repo comes with the `tribe` skill for agents.
 
+## Version
+
+0.1.0, an early concept that changes as participants join. Until 1.0 a
+breaking change bumps the minor version. Each participant states the version
+it implements.
+
 ## Integrations
 
 - [vim-tribe]: Vim as an editor
@@ -167,8 +162,15 @@ The repo comes with the `tribe` skill for agents.
 [claude-tribe]: https://github.com/roolebo/claude-tribe
 [Pipit]: https://www.pipitvoice.com
 
-References:
-1. Augmenting Human Intellect: A Conceptual Framework. https://www.dougengelbart.org/pubs/papers/scanned/Doug_Engelbart-AugmentingHumanIntellect.pdf
-2. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
-3. Agent Client Protocol. https://agentclientprotocol.com
-4. Model Context Protocol. https://modelcontextprotocol.io
+## References
+
+1. Douglas Engelbart, [Augmenting Human Intellect: A Conceptual
+   Framework][1], 1962
+2. C. A. R. Hoare, [Communicating Sequential Processes][2], 1978
+3. [Agent Client Protocol][3]
+4. [Model Context Protocol][4]
+
+[1]: https://www.dougengelbart.org/pubs/papers/scanned/Doug_Engelbart-AugmentingHumanIntellect.pdf
+[2]: https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
+[3]: https://agentclientprotocol.com
+[4]: https://modelcontextprotocol.io
