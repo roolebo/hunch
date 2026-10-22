@@ -24,3 +24,13 @@
   with git, and guard knows the agent's separate working copy only as a git
   linked worktree. Other version control, e.g. Perforce, needs its own way
   in each.
+
+- The shell as a participant. zsh registers as `shell` and reports its
+  mode from zle-keymap-select, so with vi-mode a paste in normal mode goes
+  to the agent, as from an editor. A shell protocol: `context` (directory,
+  mode, command line) and `insert TEXT` (put a command on the line without
+  running it).
+
+- Agent replies by voice. The voice is an output participant: the agent
+  sends it a short version of each reply and it speaks, e.g. `say` on the
+  Mac the human sits at, while the agent runs elsewhere over SSH.
