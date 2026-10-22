@@ -11,6 +11,27 @@ settles the version stays 0.x: a breaking change bumps the minor version (0.1
 to 0.2), a compatible one the patch. 1.0 comes once it works well for several
 editors and agents. A participant's plugin states which version it implements.
 
+## Why
+
+Engelbart named the goal: augmenting human intellect, "increasing the
+capability of a man to approach a complex problem situation" [1]. He saw the
+human as part of a system: a Human using Language, Artifacts, Methodology, in
+which he is Trained (H-LAM/T). The system improves as a whole, never by one
+artifact alone.
+
+tribe grew out of practice and came to the same view. An agent is a new
+artifact. Put inside a new editor or a chat window, it asks the human to drop
+their training: their editor, their keys, their way of working. tribe adds
+agents to the system the human already has:
+
+- Human: stays the center. Agents and tools work around what the human works
+  on.
+- Language: plain text protocols that a person can read and a shell can run.
+- Artifacts: the editor, the terminal, the agents. Each one can be replaced.
+- Methodology: small edits happen live in the human's editor; larger changes
+  come as a series of commits to review.
+- Training: the human keeps their editor, keys and habits.
+
 ## Principles
 - The center is whatever the human works on. People work best focused on one
   thing: switching between too many things breaks the natural flow.
