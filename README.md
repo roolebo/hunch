@@ -5,6 +5,29 @@ human to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix
 composition, KISS, CSP [\[2\]][2], text as the interface, small tools. LLMs
 also excel in the same lean environment.
 
+## Example: voice in Vim
+
+The human talks to an agent without leaving Vim and without new keys. The
+setup:
+
+- iTerm2 runs tmux with two panes: Vim and Claude Code.
+- Vim is started with --servername; [vim-tribe] registers it as the editor.
+- [claude-tribe] registers Claude Code as an agent.
+- [tmux-tribe] is loaded in tmux.
+- [Pipit], a dictation app, pastes speech into the terminal while a key is
+  held.
+
+The human selects a function in Vim, holds the key and says "split this in
+two". Vim is in normal mode, so tmux-tribe sends the text to the agent instead
+of the editor. The agent asks the editor what is selected, makes the change
+through the editor without moving the human's view, or prepares commits and
+opens them in Vim for review. In insert mode the same dictation types into
+the buffer, as before.
+
+The terminal only carries the paste, so this works over SSH as well: tmux,
+Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
+The cursor and the selection say what "this" and "here" mean.
+
 ## Why
 
 Engelbart named the goal: augmenting human intellect, "increasing the
@@ -25,6 +48,35 @@ agents to the system the human already has:
 - Methodology: small edits happen live in the human's editor; larger changes
   come as a series of commits to review.
 - Training: the human keeps their editor, keys and habits.
+
+## Why not
+
+ACP, the Agent Client Protocol [\[3\]][3]: the editor starts the agent as its
+child and shows it in its own panel. The editor becomes the center instead of
+the human's work, and the agent lives only as long as that editor. The human
+has to use an editor that implements ACP and talk to the agent through its
+panel. Only two participants exist: one editor and its agent. Other agents,
+tools and environments have no place in it.
+
+MCP, the Model Context Protocol [\[4\]][4]: the AI harness is the center and
+everything else is its tool. Editor integrations of agents, such as Claude
+Code's, are built on it: the editor runs a server for one vendor's agent, found
+through that vendor's lock files. Each editor implements each vendor's
+protocol, which is the coupling tribe avoids. It serves the model, not the
+human.
+
+AI editors such as Cursor: the human gives up their editor and habits for the
+vendor's. Models, harnesses and editors keep changing, and each change means
+moving again.
+
+Agents inside an editor, as plugins: each editor rebuilds the agent, and the
+human can't use an agent from elsewhere. The agent stops with the editor.
+
+Plain tmux, sending keys to a pane: text without structure. The agent can't
+ask where the cursor is or make an edit that keeps the human's view.
+
+tribe takes ideas from all of them. It doesn't exclude them either: an ACP
+agent or an MCP server can join tribe as a participant through an adapter.
 
 ## Principles
 
@@ -59,29 +111,6 @@ configuration or messages.
 Routing wires the channels: human to agent, agent to editor, agent to tool,
 environment to environment.
 
-## Example: voice in Vim
-
-The human talks to an agent without leaving Vim and without new keys. The
-setup:
-
-- iTerm2 runs tmux with two panes: Vim and Claude Code.
-- Vim is started with --servername; [vim-tribe] registers it as the editor.
-- [claude-tribe] registers Claude Code as an agent.
-- [tmux-tribe] is loaded in tmux.
-- [Pipit], a dictation app, pastes speech into the terminal while a key is
-  held.
-
-The human selects a function in Vim, holds the key and says "split this in
-two". Vim is in normal mode, so tmux-tribe sends the text to the agent instead
-of the editor. The agent asks the editor what is selected, makes the change
-through the editor without moving the human's view, or prepares commits and
-opens them in Vim for review. In insert mode the same dictation types into
-the buffer, as before.
-
-The terminal only carries the paste, so this works over SSH as well: tmux,
-Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
-The cursor and the selection say what "this" and "here" mean.
-
 ## Getting started
 
 Needs tmux, git, jq, and Vim with +socketserver.
@@ -103,35 +132,6 @@ Both register in tribe:
 
 To talk to the agent from Vim, add a dictation app that pastes into the
 terminal, e.g. [Pipit] on macOS.
-
-## Why not
-
-ACP, the Agent Client Protocol [\[3\]][3]: the editor starts the agent as its
-child and shows it in its own panel. The editor becomes the center instead of
-the human's work, and the agent lives only as long as that editor. The human
-has to use an editor that implements ACP and talk to the agent through its
-panel. Only two participants exist: one editor and its agent. Other agents,
-tools and environments have no place in it.
-
-MCP, the Model Context Protocol [\[4\]][4]: the AI harness is the center and
-everything else is its tool. Editor integrations of agents, such as Claude
-Code's, are built on it: the editor runs a server for one vendor's agent, found
-through that vendor's lock files. Each editor implements each vendor's
-protocol, which is the coupling tribe avoids. It serves the model, not the
-human.
-
-AI editors such as Cursor: the human gives up their editor and habits for the
-vendor's. Models, harnesses and editors keep changing, and each change means
-moving again.
-
-Agents inside an editor, as plugins: each editor rebuilds the agent, and the
-human can't use an agent from elsewhere. The agent stops with the editor.
-
-Plain tmux, sending keys to a pane: text without structure. The agent can't
-ask where the cursor is or make an edit that keeps the human's view.
-
-tribe takes ideas from all of them. It doesn't exclude them either: an ACP
-agent or an MCP server can join tribe as a participant through an adapter.
 
 ## Editor protocol
 
