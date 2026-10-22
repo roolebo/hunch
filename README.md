@@ -60,5 +60,15 @@ change through the editor protocol.
 
 The repo comes with the `tribe` skill for agents.
 
+## Integrations
+
+- [vim-tribe]: Vim as an editor
+- [tmux-tribe]: pastes in an editor go to the agent
+- [claude-tribe]: Claude Code, guard and registration as an agent
+
+[vim-tribe]: https://github.com/roolebo/vim-tribe
+[tmux-tribe]: https://github.com/roolebo/tmux-tribe
+[claude-tribe]: https://github.com/roolebo/claude-tribe
+
 References:
 1. Communicating Sequential Processes. https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
