@@ -165,6 +165,14 @@ it implements.
 [claude-hunch]: https://github.com/roolebo/claude-hunch
 [Pipit]: https://www.pipitvoice.com
 
+## Related
+
+- [memex]: a project's review threads, issues and CI results in one format
+- [withkeys]: API keys from pass for the commands that need them
+
+[memex]: https://github.com/roolebo/memex
+[withkeys]: https://github.com/roolebo/withkeys
+
 ## References
 
 1. Douglas Engelbart, [Augmenting Human Intellect: A Conceptual
