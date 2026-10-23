@@ -1,6 +1,6 @@
 # hunch: Human-centric convention for GenAI
 
-![Thinking out loud with LLM](hunch.jpg)
+<img src="hunch.jpg" alt="Thinking out loud with LLM" width="300">
 
 Instead of building workflows around an AI harness, build them around the
 human to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix
