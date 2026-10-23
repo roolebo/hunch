@@ -30,6 +30,32 @@ The terminal only carries the paste, so this works over SSH as well: tmux,
 Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
 The cursor and the selection say what "this" and "here" mean.
 
+## Example: a review by voice
+
+Put the cursor on a line a reviewer commented on and say "is this fixed?",
+then "reply that the next patch fixes it". Nothing to read in a chat: the
+review's threads sit on their lines in Vim, the agent's verdict shows next
+to them, the draft opens where you type, and nothing is published until
+you say so.
+
+Each part does one thing and knows only the format of the next:
+
+- [memex] brings the review, the issues, the CI and the code of a project
+  into one record format, whatever servers it uses.
+- [trail] reads those records and adds what they mean: whose move a
+  thread is, whether a concern was addressed and where.
+- [vim-memex] is memex inside Vim: it shows the records where you work
+  and drafts replies.
+- hunch connects the editor, the agent and the voice: with it, all of
+  the above works by voice too.
+- [withkeys] stores API keys granularly: per command and per project,
+  each gets its own and nothing else.
+
+Swap any part, the others stay: another editor, another agent, a local
+model, another code review server. Each combination adds power, while
+each part stays as simple as it was alone; the model is Unix's, small
+tools composed through plain text.
+
 ## Why
 
 Engelbart named the goal: augmenting human intellect, "increasing the
@@ -161,6 +187,8 @@ it implements.
 - [claude-hunch]: Claude Code, guard and registration as an agent
 
 [vim-hunch]: https://github.com/roolebo/vim-hunch
+[trail]: https://github.com/roolebo/trail
+[vim-memex]: https://github.com/roolebo/vim-memex
 [tmux-hunch]: https://github.com/roolebo/tmux-hunch
 [claude-hunch]: https://github.com/roolebo/claude-hunch
 [Pipit]: https://www.pipitvoice.com
