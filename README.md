@@ -169,9 +169,11 @@ it implements.
 
 - [memex]: a project's review threads, issues and CI results in one format
 - [withkeys]: API keys from pass for the commands that need them
+- [caveman-micro]: a six-line prompt that keeps an agent's replies short
 
 [memex]: https://github.com/roolebo/memex
 [withkeys]: https://github.com/roolebo/withkeys
+[caveman-micro]: https://github.com/kuba-guzik/caveman-micro
 
 ## References
 
