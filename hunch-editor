@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# tribe-editor: use the editor registered in tribe. Never prompts.
+# hunch-editor: use the editor registered in hunch. Never prompts.
 #
 
 set -e
@@ -68,7 +68,7 @@ guard() {
   esac
   in_linked_worktree "$(existing_dir "$1")" && return 0
   # No editor is not an error, only the reason to allow the change
-  tribe find editor > /dev/null 2>&1 || return 0
+  hunch find editor > /dev/null 2>&1 || return 0
   echo "$1 must change through the editor protocol" >&2
   exit "$MUST_USE_PROTOCOL"
 }
@@ -85,12 +85,12 @@ if [ "$1" == guard ]; then
   exit 0
 fi
 
-ID=$(tribe find editor) ||
-  die "No editor registered in tribe. Start one with tribe support"
-ADDR=$(tribe get --id "$ID" addr) ||
+ID=$(hunch find editor) ||
+  die "No editor registered in hunch. Start one with hunch support"
+ADDR=$(hunch get --id "$ID" addr) ||
   die "Editor $ID has no address, restart it"
-HANDLER=$(tribe get --id "$ID" handler) ||
-  die "Editor $ID has no handler, update its tribe plugin and restart it"
+HANDLER=$(hunch get --id "$ID" handler) ||
+  die "Editor $ID has no handler, update its hunch plugin and restart it"
 
 case "$1" in
   find)

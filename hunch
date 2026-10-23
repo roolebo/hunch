@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# tribe: minimal tmux implementation
+# hunch: minimal tmux implementation
 #
-#   tribe set NAME VALUE
-#   tribe clear
-#   tribe get [-i|--id ID] NAME
-#   tribe find ROLE
+#   hunch set NAME VALUE
+#   hunch clear
+#   hunch get [-i|--id ID] NAME
+#   hunch find ROLE
 #
 # ID identifies a participant, as printed by find. Without it, get reads the
 # caller's own properties. A role has only letters, digits, - and _.
 #
 
-: ${TRIBE_PREFIX:=tribe}
-PREFIX="@${TRIBE_PREFIX}"
+: ${HUNCH_PREFIX:=hunch}
+PREFIX="@${HUNCH_PREFIX}"
 
 die() {
   echo "$*" >&2
@@ -38,7 +38,7 @@ check_role() {
     die "Invalid role: $1. Use letters, digits, - and _"
 }
 
-tribe_options() {
+hunch_options() {
   tmux show -p -t "$TMUX_PANE" | cut -d ' ' -f 1 | grep "^${PREFIX}_"
 }
 
@@ -64,7 +64,7 @@ case "$1" in
     ;;
   clear)
     pane_available || exit 1
-    for option in $(tribe_options); do
+    for option in $(hunch_options); do
       tmux set -p -u -t "$TMUX_PANE" "$option"
     done
     ;;

@@ -1,25 +1,26 @@
 ---
-name: tribe
-description: Work with the user's editor registered in tribe. See what they
-  see, change their files through it, present larger changes for review. Use
-  when the user refers to their editor or what they're looking at, and before
-  changing files while an editor is registered.
+name: hunch
+description: Work with the user's editor registered as a participant. See
+  what they see, change their files through it, present larger changes for
+  review. Use when the user refers to their editor or what they're looking
+  at, and before changing files while an editor is registered.
 ---
 
-# tribe
+# hunch
 
-The user's editor is a participant in tribe; PROTOCOL.md, next to this
-file, specifies its commands. Nothing reaches the user's files unseen: tiny
-edits happen live in their editor, everything else is reviewed first.
+The user's editor is a participant in the environment; PROTOCOL.md, next
+to this file, specifies its commands. Nothing reaches the user's files
+unseen: tiny edits happen live in their editor, everything else is reviewed
+first.
 
-`tribe-editor` comes with tribe and is on PATH.
+`hunch-editor` comes with hunch and is on PATH.
 
 ## Changing files
 
 A tiny change the user asks for (one spot, e.g. "rename this", "fix that
 line") goes in place through the editor:
 
-- Run `tribe-editor find` first. If it fails, no editor is registered: tell
+- Run `hunch-editor find` first. If it fails, no editor is registered: tell
   the user, then use your normal file tools.
 - Use `replace` and `create`. Never change the user's files with your
   built-in write/edit tools, `sed -i` or redirection.
@@ -32,12 +33,12 @@ Everything else is reviewed before it reaches the user's files:
    -b NAME ../REPO-NAME`), with your normal tools.
 3. Commit the work as a series of small commits, one change each, so the
    user can review them one by one.
-4. From the user's working copy, show it: `tribe-editor review RANGE` (git:
+4. From the user's working copy, show it: `hunch-editor review RANGE` (git:
    `main..NAME`). Fix what they ask for, then show it again; do the same
    after any other rewrite of the series (git: amend, rebase, squash of
    fixups).
 5. Once approved, apply the series as is, without merge commits (git:
-   `git merge --ff-only NAME`), run `tribe-editor reload`, then remove the
+   `git merge --ff-only NAME`), run `hunch-editor reload`, then remove the
    separate copy. If it doesn't apply, rebase it and review again.
 
 Reading files with your normal tools is fine. Use `read` when the user may
@@ -46,17 +47,17 @@ stop and ask the user to save or discard them.
 
 ## See what the user sees
 
-    tribe-editor context
-    tribe-editor selection
-    tribe-editor read BUFFER [START END]
+    hunch-editor context
+    hunch-editor selection
+    hunch-editor read BUFFER [START END]
 
 What the user sees:
 
-    tribe-editor read "$(tribe-editor context | jq -r .buffer)"
+    hunch-editor read "$(hunch-editor context | jq -r .buffer)"
 
 ## Show a file
 
-    tribe-editor open path/to/file 42
+    hunch-editor open path/to/file 42
 
 Use it only when the user asks to see something: it moves their view.
 
@@ -66,7 +67,7 @@ Replace text, like an edit tool. Old text goes on fd 3, new text on fd 4;
 it may start or end mid-line. Quoted heredoc delimiters keep the text
 literal:
 
-    tribe-editor replace path/to/file 3<<'OLD' 4<<'NEW'
+    hunch-editor replace path/to/file 3<<'OLD' 4<<'NEW'
     def Clear(name: string, value: string)
     OLD
     def Clear()
@@ -77,7 +78,7 @@ neighbouring line in the old text and keep it in the new text.
 
 Create a new file:
 
-    tribe-editor create path/to/new_file <<'EOF'
+    hunch-editor create path/to/new_file <<'EOF'
     contents
     EOF
 
