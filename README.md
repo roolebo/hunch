@@ -42,8 +42,6 @@ Each part does one thing and knows only the format of the next:
 
 - [memex] brings the review, the issues, the CI and the code of a project
   into one record format, whatever servers it uses.
-- [trail] reads those records and adds what they mean: whose move a
-  thread is, whether a concern was addressed and where.
 - [vim-memex] is memex inside Vim: it shows the records where you work
   and drafts replies.
 - hunch connects the editor, the agent and the voice: with it, all of
@@ -187,7 +185,6 @@ it implements.
 - [claude-hunch]: Claude Code, guard and registration as an agent
 
 [vim-hunch]: https://github.com/roolebo/vim-hunch
-[trail]: https://github.com/roolebo/trail
 [vim-memex]: https://github.com/roolebo/vim-memex
 [tmux-hunch]: https://github.com/roolebo/tmux-hunch
 [claude-hunch]: https://github.com/roolebo/claude-hunch
