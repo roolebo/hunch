@@ -1,5 +1,7 @@
 # tribe: Human-centric convention for GenAI
 
+![Thinking out loud with LLM](hunch.jpg)
+
 Instead of building workflows around an AI harness, build them around the
 human to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix
 composition, KISS, CSP [\[2\]][2], text as the interface, small tools. LLMs
