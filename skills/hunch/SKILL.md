@@ -45,21 +45,15 @@ Reading files with your normal tools is fine. Use `read` when the user may
 have unsaved changes. Exit status 3 means unsaved changes in the editor:
 stop and ask the user to save or discard them.
 
-## See what the user sees
+## Commands
 
-    hunch-editor context
-    hunch-editor selection
-    hunch-editor read BUFFER [START END]
-
+`hunch-editor --help` lists the commands; PROTOCOL.md specifies them.
 What the user sees:
 
     hunch-editor read "$(hunch-editor context | jq -r .buffer)"
 
-## Show a file
-
-    hunch-editor open path/to/file 42
-
-Use it only when the user asks to see something: it moves their view.
+Use `open` only when the user asks to see something: it moves their
+view.
 
 ## Edit
 
@@ -75,12 +69,6 @@ literal:
 
 The final newline of each heredoc is dropped. To delete lines, include a
 neighbouring line in the old text and keep it in the new text.
-
-Create a new file:
-
-    hunch-editor create path/to/new_file <<'EOF'
-    contents
-    EOF
 
 If the editor doesn't answer (e.g. `Send expression failed`), it may be
 suspended or busy: tell the user. Don't make the change with your own tools
