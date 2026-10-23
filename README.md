@@ -1,4 +1,4 @@
-# hunch: Human-centric convention for GenAI
+# hunch: Augment, don't replace
 
 <img src="hunch.jpg" alt="Thinking out loud with LLM" width="300">
 
