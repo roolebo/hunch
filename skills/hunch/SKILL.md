@@ -20,8 +20,8 @@ first.
 A tiny change the user asks for (one spot, e.g. "rename this", "fix that
 line") goes in place through the editor:
 
-- Run `hunch-editor find` first. If it fails, no editor is registered: tell
-  the user, then use your normal file tools.
+- Run `hunch-editor find` first. If it fails, there is no editor in your
+  tmux window: tell the user, then use your normal file tools.
 - Use `replace` and `create`. Never change the user's files with your
   built-in write/edit tools, `sed -i` or redirection.
 
