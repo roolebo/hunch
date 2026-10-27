@@ -9,6 +9,8 @@ also excel in the same lean environment.
 
 ## Example: voice in Vim
 
+[Demo video][demo]
+
 The human talks to an agent without leaving Vim and without new keys. The
 setup:
 
@@ -190,6 +192,7 @@ it implements.
 [tmux-hunch]: https://github.com/roolebo/tmux-hunch
 [claude-hunch]: https://github.com/roolebo/claude-hunch
 [Pipit]: https://www.pipitvoice.com
+[demo]: https://youtu.be/s8I2Pvz_eYo
 
 ## Related
 
