@@ -7,9 +7,12 @@
   it, and an agent on another host would map `root` to its own checkout.
   Likely in 0.2, together with network addresses.
 
-- Explicit editor and agent pairs. find takes the nearest participant by
-  tmux window, then session; a group property would pair them when the
-  layout doesn't, e.g. two agents in one window.
+- Participants outside the caller's window. find looks only in the
+  caller's tmux window, so an editor or agent in another window or session
+  is not found. Taking the nearest one elsewhere paired an agent with a Vim
+  left in a detached session. Pairing across windows needs its own design,
+  e.g. a group property that pairs participants explicitly, which would
+  also cover two agents in one window.
 
 - Version check. An editor would register `protocol` with the hunch version
   it implements, and hunch-editor would refuse a different minor version. Worth

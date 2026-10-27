@@ -88,21 +88,13 @@ case "$1" in
       usage
     fi
     check_role "$2"
-    # Nearest participant with the role: the caller's window, then its
-    # session, then all sessions
-    window=""
-    session=-s
-    all=-a
+    # Only the caller's window: a participant elsewhere may be one the
+    # user doesn't see
     has_role="#{==:#{${PREFIX}_role},$2}"
-    for scope in "$window" "$session" "$all"; do
-      id=$(tmux list-panes $scope -t "$TMUX_PANE" -f "$has_role" \
-        -F '#{pane_id}' | head -n 1)
-      if [ -n "$id" ]; then
-        echo "$id"
-        exit 0
-      fi
-    done
-    exit 1
+    id=$(tmux list-panes -t "$TMUX_PANE" -f "$has_role" \
+      -F '#{pane_id}' | head -n 1)
+    [ -n "$id" ] || exit 1
+    echo "$id"
     ;;
   *)
     usage
