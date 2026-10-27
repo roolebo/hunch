@@ -151,8 +151,9 @@ you use:
 - [claude-hunch] in Claude Code:
   `/plugin install hunch --marketplace roolebo/claude-hunch`.
 
-In tmux, run `vim --servername hunch` in one pane and `claude` in another.
-Both register as participants:
+In one tmux window, run `vim --servername hunch` in one pane and `claude` in
+another. Both register as participants and find each other only within the
+window:
 
     hunch-editor find
     hunch find agent
