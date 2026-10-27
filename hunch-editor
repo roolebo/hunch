@@ -86,7 +86,7 @@ if [ "$1" == guard ]; then
 fi
 
 ID=$(hunch find editor) ||
-  die "No editor registered in hunch. Start one with hunch support"
+  die "No editor in this tmux window. Start one in it with hunch support"
 ADDR=$(hunch get --id "$ID" addr) ||
   die "Editor $ID has no address, restart it"
 HANDLER=$(hunch get --id "$ID" handler) ||
