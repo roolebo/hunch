@@ -224,10 +224,12 @@ it implements.
 ## Integrations
 
 - [vim-hunch]: Vim as an editor
+- [firefox-hunch]: Firefox as a browser
 - [tmux-hunch]: pastes in an editor go to the agent
 - [claude-hunch]: Claude Code, guard and registration as an agent
 
 [vim-hunch]: https://github.com/roolebo/vim-hunch
+[firefox-hunch]: https://github.com/roolebo/firefox-hunch
 [vim-memex]: https://github.com/roolebo/vim-memex
 [tmux-hunch]: https://github.com/roolebo/tmux-hunch
 [claude-hunch]: https://github.com/roolebo/claude-hunch
