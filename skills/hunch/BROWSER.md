@@ -17,12 +17,11 @@ the human sits at, while the agent runs on a remote one.
 Terms:
 
     TAB         a tab, by an id the browser gives it, unique while it's open
-    URL         a web address
     SELECTOR    a CSS selector
 
 Commands:
 
-    context             where the human is: tab, selection, open tabs
+    context             where the human is: tab, title, selection
     selection           the selected text in the active tab
     read                the text of the active tab
     dom [SELECTOR]      HTML of the elements SELECTOR matches in the active
@@ -32,23 +31,18 @@ Commands:
 `context` prints one JSON object, where the human is:
 
     tab         the active TAB
-    url, title  its URL and title
+    title       its title
     selection   the selection in the page, or null: text, selector of the
                 nearest block around it and that block's html, null when
                 too large
-    tabs        open tabs, each with tab, url, title and active (shown in
-                its window)
 
 ```json
 {
-  "tab": 7, "url": "https://example.com/", "title": "Example",
+  "tab": 7, "title": "Example",
   "selection": {
     "text": "emphasis", "selector": "#b",
     "html": "<p id=\"b\">Second <em>emphasis</em> here.</p>"
-  },
-  "tabs": [
-    {"tab": 7, "url": "https://example.com/", "title": "Example", "active": true}
-  ]
+  }
 }
 ```
 
@@ -58,6 +52,8 @@ strings are printed as JSON. A command without a result prints nothing.
 Rules:
 
 - Commands only read: none changes a page or what the human sees.
+- Only the active page's content leaves the browser: no addresses, no
+  other tabs.
 - The handler never asks the human anything.
 
 Exit status:
