@@ -1,9 +1,10 @@
 ---
 name: hunch
-description: Work with the user's editor registered as a participant. See
-  what they see, change their files through it, present larger changes for
-  review. Use when the user refers to their editor or what they're looking
-  at, and before changing files while an editor is registered.
+description: Work with the user's editor and browser registered as
+  participants. See what they see, change their files through the editor,
+  present larger changes for review, read what they see in their browser. Use
+  when the user refers to their editor, their browser or what they're
+  looking at, and before changing files while an editor is registered.
 ---
 
 # hunch
@@ -73,3 +74,10 @@ neighbouring line in the old text and keep it in the new text.
 If the editor doesn't answer (e.g. `Send expression failed`), it may be
 suspended or busy: tell the user. Don't make the change with your own tools
 instead.
+
+## The browser
+
+`hunch-browser` reads the browser registered in your tmux window;
+BROWSER.md, next to this file, specifies its commands. When the user
+points at something in the browser ("this", "here"), it's their selection:
+start with `hunch-browser context`.
