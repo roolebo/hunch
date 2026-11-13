@@ -51,7 +51,8 @@ class Browser:
 class Browsers:
     """The connected browsers, and the replies the agent waits for."""
 
-    def __init__(self):
+    def __init__(self, url):
+        self.url = url
         self.browsers = {}
         self.focused = None
         self.waiting = {}
@@ -73,10 +74,7 @@ class Browsers:
         with self.lock:
             browser = self.target()
             if browser is None:
-                return {
-                    "error": "No browser connected: check the server "
-                    "address and token in the extension's preferences"
-                }
+                return {"error": self.no_browser()}
             id = next(self.ids)
             done = threading.Event()
             self.waiting[id] = {"done": done}
@@ -88,10 +86,23 @@ class Browsers:
             return {"error": f"The browser didn't answer in {REPLY_WAIT} s"}
         return reply
 
+    def no_browser(self):
+        if not self.browsers:
+            return (
+                f"No browser has connected to {self.url}: check the server "
+                "address and token in the extension's preferences"
+            )
+        last_poll = max(b.last_poll for b in self.browsers.values())
+        idle = time.monotonic() - last_poll
+        return f"No browser has polled for {idle:.0f} s: is it still running?"
+
     def next(self, name):
         """The next command still awaited for browser NAME, or None after
         POLL_WAIT."""
         with self.lock:
+            browser = self.browsers.get(name)
+            if browser is None or not browser.connected():
+                print(f"Browser {name} connected")
             browser = self.browsers.setdefault(name, Browser())
             browser.polls += 1
         deadline = time.monotonic() + POLL_WAIT
@@ -132,7 +143,7 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/poll":
             return self.reply(404, {"error": f"No such path: {path}"})
         if not self.from_extension():
-            return self.reply(401, {"error": "Wrong token"})
+            return self.reject()
         if not name:
             return self.reply(400, {"error": "No browser id: ?browser=ID"})
         command = BROWSERS.next(name)
@@ -149,12 +160,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {"error": f"Body isn't JSON: {e}"})
         if hmac.compare_digest(path, f"/{SECRET}/command"):
             reply = BROWSERS.run(body["command"], body["args"])
-            print(body["command"], "error" if "error" in reply else "ok")
+            print(body["command"], reply.get("error", "ok"))
             return self.reply(200, reply)
         if path not in ("/reply", "/focus"):
             return self.reply(404, {"error": f"No such path: {path}"})
         if not self.from_extension():
-            return self.reply(401, {"error": "Wrong token"})
+            return self.reject()
         if path == "/reply":
             if not isinstance(body, dict):
                 return self.reply(400, {"error": "A reply is a JSON object"})
@@ -169,6 +180,14 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         name = parse_qs(url.query).get("browser", [""])[0]
         return url.path, name
+
+    def reject(self):
+        # The extension retries every few seconds; once per address is enough
+        address = self.client_address[0]
+        if address not in REJECTED:
+            REJECTED.add(address)
+            print(f"Rejected a browser at {address}: wrong token")
+        self.reply(401, {"error": "Wrong token"})
 
     def from_extension(self):
         token = self.headers.get("Authorization", "")
@@ -210,12 +229,13 @@ def main():
     )
     host, port = parser.parse_args().listen.rsplit(":", 1)
 
-    global TOKEN, SECRET, BROWSERS
+    global TOKEN, SECRET, BROWSERS, REJECTED
     TOKEN = os.environ.get("HUNCH_BROWSER_TOKEN")
     if not TOKEN:
         sys.exit("Set HUNCH_BROWSER_TOKEN to the token the extensions send")
     SECRET = secrets.token_urlsafe(16)
-    BROWSERS = Browsers()
+    REJECTED = set()
+    BROWSERS = Browsers(f"http://{host}:{port}")
 
     server = ThreadingHTTPServer((host, int(port)), Handler)
     local = "127.0.0.1" if host == "0.0.0.0" else host
@@ -224,7 +244,7 @@ def main():
     hunch("set", "handler", str(HANDLER))
     signal.signal(signal.SIGTERM, leave)
     signal.signal(signal.SIGHUP, leave)
-    print(f"Serving browser extensions at http://{host}:{port}")
+    print(f"Serving browser extensions at {BROWSERS.url}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
