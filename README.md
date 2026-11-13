@@ -18,8 +18,8 @@ setup:
 - Vim is started with --servername; [vim-hunch] registers it as the editor.
 - [claude-hunch] registers Claude Code as an agent.
 - [tmux-hunch] is loaded in tmux.
-- [Pipit], a dictation app, pastes speech into the terminal while a key is
-  held.
+- A dictation app, [Handy] or [Pipit], pastes speech into the terminal
+  while a key is held.
 
 The human selects a function in Vim, holds the key and says "split this in
 two". Vim is in normal mode, so tmux-hunch sends the text to the agent instead
@@ -29,7 +29,8 @@ opens them in Vim for review. In insert mode the same dictation types into
 the buffer, as before.
 
 The terminal only carries the paste, so this works over SSH as well: tmux,
-Vim and the agent run on a remote machine, Pipit and iTerm2 on the local one.
+Vim and the agent run on a remote machine, the dictation app and iTerm2 on
+the local one.
 The cursor and the selection say what "this" and "here" mean.
 
 ## Example: a review by voice
@@ -161,7 +162,7 @@ window:
     hunch find agent
 
 To talk to the agent from Vim, add a dictation app that pastes into the
-terminal, e.g. [Pipit] on macOS.
+terminal, e.g. [Handy] on Linux, macOS and Windows, or [Pipit] on macOS.
 
 ## Editor protocol
 
@@ -196,6 +197,7 @@ it implements.
 [vim-memex]: https://github.com/roolebo/vim-memex
 [tmux-hunch]: https://github.com/roolebo/tmux-hunch
 [claude-hunch]: https://github.com/roolebo/claude-hunch
+[Handy]: https://handy.computer
 [Pipit]: https://www.pipitvoice.com
 [demo]: https://youtu.be/s8I2Pvz_eYo
 
