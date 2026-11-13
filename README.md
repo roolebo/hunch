@@ -143,7 +143,8 @@ environment to environment.
 
 ## Getting started
 
-Needs tmux, git, jq, and Vim with +socketserver.
+Needs tmux, git, jq, and Vim with +socketserver; Python 3 for the browser
+server.
 
 Put `hunch`, `hunch-editor` and `hunch-browser` from this repo on PATH and link
 `skills/hunch` into `~/.claude/skills`. The rest with the plugin managers
@@ -171,6 +172,39 @@ Specified in [skills/hunch/PROTOCOL.md](skills/hunch/PROTOCOL.md).
 ## Browser protocol
 
 Specified in [skills/hunch/BROWSER.md](skills/hunch/BROWSER.md).
+
+## Browser server
+
+`hunch-browser-server` registers the browser in hunch and passes the
+agent's commands to browser extensions, one per browser. The browsers may
+run on another host, e.g. the machine the human sits at. Run it in a pane
+of the agent's tmux window, listening on an address the browsers reach:
+
+    HUNCH_BROWSER_TOKEN=... hunch-browser-server --listen HOST:PORT
+
+Several browsers can connect at once; commands go to the one the human
+used last. An extension implements the browser protocol and talks to the
+server over HTTP. Each request carries `Authorization: Bearer TOKEN`, and
+`?browser=ID` with an id the extension keeps across restarts.
+
+    GET /poll?browser=ID    the next command: 200 and the command, or 204
+                            after 25 s without one; poll again right away
+    POST /reply             the reply to a command
+    POST /focus?browser=ID  the human switched to this browser
+
+A command:
+
+    id          a number to send back with the reply
+    command     a command of the browser protocol
+    args        its arguments, as strings
+
+A reply has the command's `id` and either `result`, any JSON value, or
+`error`, a message for the human.
+
+```json
+{"id": 3, "command": "dom", "args": ["main"]}
+{"id": 3, "result": "<main><p>First paragraph.</p></main>"}
+```
 
 ## Agents
 
