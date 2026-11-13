@@ -144,7 +144,7 @@ environment to environment.
 
 Needs tmux, git, jq, and Vim with +socketserver.
 
-Put `hunch` and `hunch-editor` from this repo on PATH and link
+Put `hunch`, `hunch-editor` and `hunch-browser` from this repo on PATH and link
 `skills/hunch` into `~/.claude/skills`. The rest with the plugin managers
 you use:
 
@@ -167,9 +167,14 @@ terminal, e.g. [Pipit] on macOS.
 
 Specified in [skills/hunch/PROTOCOL.md](skills/hunch/PROTOCOL.md).
 
+## Browser protocol
+
+Specified in [skills/hunch/BROWSER.md](skills/hunch/BROWSER.md).
+
 ## Agents
 
 `hunch-editor` finds the editor in the registry and runs its handler.
+`hunch-browser` does the same for the browser.
 `hunch-editor guard FILE` exits 2, with the reason on stderr, if FILE must
 change through the editor protocol.
 
