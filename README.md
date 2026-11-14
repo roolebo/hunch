@@ -57,6 +57,20 @@ model, another code review server. Each combination adds power, while
 each part stays as simple as it was alone; the model is Unix's, small
 tools composed through plain text.
 
+## Example: a document in the browser
+
+A report is written in [Typst] and read where it looks finished: in
+Firefox. `typst watch --features html` serves the render and reloads the
+page whenever the source changes; [tinymist] previews it as pages.
+[firefox-hunch] connects Firefox to the agent's tmux window through
+`hunch-browser-server`, so the browser may run on the human's laptop and
+the agent on a remote machine.
+
+The human selects a sentence or any other part of the page, a figure, a
+table, corrects it by voice and gets the result back: the agent reads
+the selection from the browser, changes the Typst source, and the page
+reloads.
+
 ## Why
 
 Engelbart named the goal: augmenting human intellect, "increasing the
@@ -234,6 +248,8 @@ it implements.
 [tmux-hunch]: https://github.com/roolebo/tmux-hunch
 [claude-hunch]: https://github.com/roolebo/claude-hunch
 [Handy]: https://handy.computer
+[Typst]: https://typst.app
+[tinymist]: https://github.com/Myriad-Dreamin/tinymist
 [Pipit]: https://www.pipitvoice.com
 [demo]: https://youtu.be/s8I2Pvz_eYo
 
