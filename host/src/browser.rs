@@ -65,7 +65,9 @@ fn receive(input: &mut File) -> io::Result<Option<Value>> {
     }
     let mut message = vec![0; u32::from_ne_bytes(length) as usize];
     input.read_exact(&mut message)?;
-    serde_json::from_slice(&message).map(Some).map_err(io::Error::other)
+    serde_json::from_slice(&message)
+        .map(Some)
+        .map_err(io::Error::other)
 }
 
 fn send(out: &mut File, message: &Value) -> io::Result<()> {
@@ -110,7 +112,11 @@ fn connect(input: &mut File, out: &mut File) -> Result<()> {
                 Some(error) => Err(error.to_string()),
                 None => Ok(message["result"].clone()),
             };
-            let waiting = browser.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+            let waiting = browser
+                .waiting
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&id);
             if let Some(waiting) = waiting {
                 let _ = waiting.send(reply);
             }
@@ -118,7 +124,11 @@ fn connect(input: &mut File, out: &mut File) -> Result<()> {
     };
     browsers().retain(|b| !Arc::ptr_eq(b, &browser));
     // Dropping the senders tells each waiting command the browser is gone
-    browser.waiting.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    browser
+        .waiting
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
     received
 }
 
@@ -129,11 +139,22 @@ fn ask(command: &str, args: &[&str]) -> Result<Value> {
     })?;
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let (reply, replied) = mpsc::channel();
-    browser.waiting.lock().unwrap_or_else(|e| e.into_inner()).insert(id, reply);
+    browser
+        .waiting
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(id, reply);
     let request = json!({"id": id, "command": command, "args": args});
-    let sent = send(&mut browser.out.lock().unwrap_or_else(|e| e.into_inner()), &request);
+    let sent = send(
+        &mut browser.out.lock().unwrap_or_else(|e| e.into_inner()),
+        &request,
+    );
     if let Err(e) = sent {
-        browser.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        browser
+            .waiting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
         return Err(failed(format!("can't reach {}: {e}", browser.name)));
     }
     let name = &browser.name;
@@ -141,8 +162,15 @@ fn ask(command: &str, args: &[&str]) -> Result<Value> {
         Ok(reply) => reply.map_err(|e| failed(format!("{name}: {e}"))),
         Err(mpsc::RecvTimeoutError::Disconnected) => Err(failed(format!("{name} went away"))),
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            browser.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-            Err(failed(format!("{name} didn't answer in {} s", REPLY_WAIT.as_secs())))
+            browser
+                .waiting
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&id);
+            Err(failed(format!(
+                "{name} didn't answer in {} s",
+                REPLY_WAIT.as_secs()
+            )))
         }
     }
 }
@@ -209,13 +237,24 @@ pub fn run(args: &[String], input: &mut File, out: &mut File, _: &AtomicBool) ->
         ["connect"] => return connect(input, out),
         ["status"] => {
             let names: Vec<String> = browsers().iter().rev().map(|b| b.name.clone()).collect();
-            writeln!(out, "{}", json!({"browsers": names, "serves": "localhost", "allow": []}))
+            writeln!(
+                out,
+                "{}",
+                json!({"browsers": names, "serves": "localhost", "allow": []})
+            )
         }
         ["install", "firefox"] => writeln!(out, "installed {}", install_firefox()?.display()),
-        ["install", browser] => return Err(failed(format!("can't install for {browser}, only firefox"))),
+        ["install", browser] => {
+            return Err(failed(format!("can't install for {browser}, only firefox")));
+        }
         [command @ ("context" | "selection" | "read")] => print(out, &ask(command, &[])?),
         ["dom", selector @ ..] if selector.len() <= 1 => print(out, &ask("dom", selector)?),
-        _ => return Err(Error::Usage("unknown command or wrong arguments".into(), USAGE)),
+        _ => {
+            return Err(Error::Usage(
+                "unknown command or wrong arguments".into(),
+                USAGE,
+            ));
+        }
     };
     written.map_err(|e| failed(format!("can't answer: {e}")))
 }
