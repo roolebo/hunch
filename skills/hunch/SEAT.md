@@ -132,8 +132,10 @@ Rules:
   pages it offers only the hosts in their allow.
 - Only the human sets allow, in the seat's config or from the tray; no
   command sets it.
-- Escape, or another key while KEY is held, cancels the recording: KEY
-  with another key makes a shortcut, not dictation.
+- Escape while KEY is held cancels the recording. Another key, a
+  shortcut with KEY or a key some program posts, stops it: the seat
+  transcribes what it got, keeps it as the last transcription and says
+  it didn't send it.
 - The seat keeps only the last transcription, in memory, for the human
   to copy; never on disk.
 

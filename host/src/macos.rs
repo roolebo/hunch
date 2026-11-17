@@ -176,6 +176,8 @@ const LEFT_MOUSE_UP: u32 = 2;
 const KEY_DOWN: u32 = 10;
 const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
 const KEYCODE_FIELD: u32 = 9;
+/// The pid of the process that posted an event
+const SOURCE_PID_FIELD: u32 = 41;
 const KEY_ESCAPE: i64 = 53;
 const FLAGS_CHANGED: u32 = 12;
 const COMBINED_SESSION_STATE: u32 = 0;
@@ -574,13 +576,17 @@ pub fn may_record_audio() -> bool {
 
 /// A key the dictation listens for
 pub enum Key {
-    /// A modifier key changed: its keycode, and the flags it left
+    /// A modifier key changed: its keycode, the flags it left, and the pid
+    /// of the process that posted it, 0 for the keyboard
     Modifier {
         code: i64,
         flags: u64,
+        from: i64,
     },
     Escape,
-    Other,
+    Other {
+        from: i64,
+    },
 }
 
 /// A key that dictates while held
@@ -625,7 +631,7 @@ impl DictationKey {
     /// this one
     pub fn down(&self, key: &Key) -> Option<bool> {
         match key {
-            Key::Modifier { code, flags } if *code == self.code => Some(flags & self.flag != 0),
+            Key::Modifier { code, flags, .. } if *code == self.code => Some(flags & self.flag != 0),
             _ => None,
         }
     }
@@ -645,13 +651,14 @@ extern "C" fn on_key_event(
     // SAFETY: info is the Keys watch_keys keeps for the run loop's life
     let keys = unsafe { &mut *info.cast::<Keys>() };
     let code = unsafe { CGEventGetIntegerValueField(event, KEYCODE_FIELD) };
+    let from = unsafe { CGEventGetIntegerValueField(event, SOURCE_PID_FIELD) };
     match kind {
         FLAGS_CHANGED => {
             let flags = unsafe { CGEventGetFlags(event) };
-            (keys.on)(Key::Modifier { code, flags });
+            (keys.on)(Key::Modifier { code, flags, from });
         }
         KEY_DOWN if code == KEY_ESCAPE => (keys.on)(Key::Escape),
-        KEY_DOWN => (keys.on)(Key::Other),
+        KEY_DOWN => (keys.on)(Key::Other { from }),
         TAP_DISABLED_BY_TIMEOUT => unsafe { CGEventTapEnable(keys.tap, true) },
         _ => {}
     }

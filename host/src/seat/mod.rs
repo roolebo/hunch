@@ -257,10 +257,22 @@ fn on_key(key: Key) {
     match (dictation.down(&key), key) {
         (Some(true), _) => press(),
         (Some(false), _) => release(),
-        // Another modifier goes with the key into a shortcut
-        (None, Key::Modifier { .. }) => cancel(),
-        // So does a key typed while it's held
-        (None, Key::Escape | Key::Other) => cancel(),
+        (None, Key::Escape) => cancel(),
+        // Another key may make a shortcut of the dictation key, or come
+        // from a program rather than the human: either way the words
+        // spoken so far are kept, though not sent
+        (None, Key::Modifier { from, .. } | Key::Other { from }) => interrupt(from),
+    }
+}
+
+fn interrupt(from: i64) {
+    if lock().opening {
+        return change(|s| s.opening = false);
+    }
+    if lock().recording.is_some() {
+        // Which program it was, if not the keyboard; never which key
+        eprintln!("hunch-host: a key from pid {from} stops the dictation");
+        finish(false);
     }
 }
 
@@ -323,14 +335,21 @@ fn release() {
     if lock().opening {
         return change(|s| s.opening = false);
     }
+    if lock().recording.is_some() {
+        eprintln!("hunch-host: dictation ends, transcribing");
+        finish(true);
+    }
+}
+
+/// Transcribes the recording, and sends the text if send
+fn finish(send: bool) {
     let Some(recording) = lock().recording.take() else {
         return;
     };
     let settings = lock().settings.clone();
-    eprintln!("hunch-host: dictation ends, transcribing");
     change(|s| s.transcribing = true);
     thread::spawn(move || {
-        let result = dictate(recording, &settings);
+        let result = dictate(recording, &settings, send);
         if let Err(e) = &result {
             eprintln!("hunch-host: dictation failed: {e}");
         }
@@ -341,7 +360,7 @@ fn release() {
     });
 }
 
-fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
+fn dictate(recording: audio::Recording, settings: &Settings, send: bool) -> Result<()> {
     let pcm = recording.stop();
     if pcm.is_empty() {
         return Err(failed(
@@ -362,6 +381,11 @@ fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
     }
     // Kept even if it doesn't arrive: that's when the human needs it
     change(|s| s.last = Some(text.clone()));
+    if !send {
+        return Err(failed(
+            "another key stopped the dictation; the text waits in Copy Last Transcription",
+        ));
+    }
     // How much and where, never what: the log isn't for the human's words
     eprintln!(
         "hunch-host: dictation sends {} characters to {}",
