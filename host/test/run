@@ -502,7 +502,7 @@ test_seat_context() {
   seat context
   check status "$STATUS" 0
   check fields "$(jq -c 'keys' <<< "$OUT")" \
-    '["compute","error","idle","key","loading","locked","model","preload","recording","submit","target","transcribing","warm","wm"]'
+    '["compute","error","idle","key","loading","locked","model","opening","preload","recording","submit","target","transcribing","warm","wm"]'
   check defaults "$(jq -c '{key, model, target, submit, preload, warm}' <<< "$OUT")" \
     '{"key":"right-command","model":null,"target":"focus","submit":true,"preload":true,"warm":null}'
 }

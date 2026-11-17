@@ -61,7 +61,10 @@ Commands:
     locked      true while the screen is locked
     wm          the ADDR of its wm: the graphical desktop, or the tty of
                 a text console
-    recording   true while the human holds the dictation key
+    opening     true while the human holds the dictation key and the
+                microphone opens, which can take seconds after sleep
+    recording   true while the human holds the dictation key and the
+                microphone records
     transcribing
                 true from the key's release until the text is sent
     loading     true while MODEL loads
@@ -78,7 +81,8 @@ Commands:
 ```json
 {
   "idle": 3.2, "locked": false, "wm": "macos:",
-  "recording": false, "transcribing": false, "loading": false,
+  "opening": false, "recording": false, "transcribing": false,
+  "loading": false,
   "compute": "localhost local:",
   "model": "handy-computer/parakeet-tdt-0.6b-v3-gguf",
   "target": "focus", "key": "right-command", "submit": true,

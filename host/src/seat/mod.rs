@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const USAGE: &str = "\
 Usage: hunch-host seat COMMAND [ARGUMENTS]
@@ -67,6 +67,11 @@ struct Settings {
 struct State {
     settings: Settings,
     recording: Option<audio::Recording>,
+    /// The human holds the key while the microphone opens
+    opening: bool,
+    /// A thread opens the microphone; a press meanwhile waits for it
+    /// rather than opening another
+    opener: bool,
     transcribing: bool,
     /// The model is loading, at start or for a dictation
     loading: bool,
@@ -136,6 +141,8 @@ fn seat() -> &'static Seat {
         state: Mutex::new(State {
             settings: load(),
             recording: None,
+            opening: false,
+            opener: false,
             transcribing: false,
             loading: false,
             last: None,
@@ -164,6 +171,7 @@ fn context(state: &State) -> Value {
         "locked": macos::locked(),
         "wm": WM,
         "recording": state.recording.is_some(),
+        "opening": state.opening,
         "transcribing": state.transcribing,
         "loading": state.loading,
         "compute": COMPUTE,
@@ -257,30 +265,61 @@ fn on_key(key: Key) {
 }
 
 fn press() {
-    if lock().recording.is_some() {
+    if lock().recording.is_some() || lock().opening {
         return;
     }
     if lock().settings.model.is_none() {
         return change(|s| s.error = Some("no model: pick one in the tray".into()));
     }
     eprintln!("hunch-host: dictation starts");
+    let mut open = false;
+    change(|s| {
+        s.opening = true;
+        s.error = None;
+        open = !s.opener;
+        s.opener = true;
+    });
+    // A microphone waking from sleep can take seconds to open: off the
+    // key thread, so a release meanwhile doesn't wait in line behind it
+    if open {
+        thread::spawn(open_microphone);
+    }
+}
+
+fn open_microphone() {
+    let opening = Instant::now();
     let recording = audio::Recording::start();
-    change(|s| match recording {
-        Ok(recording) => {
-            s.recording = Some(recording);
-            s.error = None;
+    let took = opening.elapsed();
+    eprintln!("hunch-host: the microphone took {} ms to open", took.as_millis());
+    change(|s| {
+        s.opener = false;
+        let held = std::mem::take(&mut s.opening);
+        match recording {
+            Ok(recording) if held => s.recording = Some(recording),
+            Ok(_) => {
+                s.error = Some(format!(
+                    "the microphone took {:.1} s to open: hold the key until Listening…",
+                    took.as_secs_f64()
+                ))
+            }
+            Err(e) => s.error = Some(e),
         }
-        Err(e) => s.error = Some(e),
     });
 }
 
 fn cancel() {
-    if lock().recording.is_some() {
-        change(|s| s.recording = None);
+    if lock().recording.is_some() || lock().opening {
+        change(|s| {
+            s.recording = None;
+            s.opening = false;
+        });
     }
 }
 
 fn release() {
+    if lock().opening {
+        return change(|s| s.opening = false);
+    }
     let Some(recording) = lock().recording.take() else {
         return;
     };
@@ -301,6 +340,9 @@ fn release() {
 
 fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
     let pcm = recording.stop();
+    if pcm.is_empty() {
+        return Err(failed("the key went up before the microphone sent any sound"));
+    }
     if pcm.iter().all(|&s| s == 0.0) {
         return Err(failed(
             "the microphone sent nothing but silence: check Microphone in System Settings",
