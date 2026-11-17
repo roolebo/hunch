@@ -18,6 +18,8 @@ Usage: hunch-host compute ADDR COMMAND [ARGUMENTS]
 Commands:
   models          The models it can run, as JSON
   run MODEL TYPE  Run MODEL on stdin, print its answer
+  load MODEL      Load MODEL now, so the next run doesn't wait for it
+  unload          Free the loaded model's memory
 
 ADDR is local: so far. TYPE is audio/wav so far: 16-bit PCM, 16 kHz, mono.";
 
@@ -196,31 +198,48 @@ struct Loaded {
 }
 
 static LOADED: Mutex<Option<Loaded>> = Mutex::new(None);
+/// The id of the model in LOADED, apart from it, since a run holds LOADED
+/// for as long as it takes
+static LOADED_ID: Mutex<Option<String>> = Mutex::new(None);
 
-fn loaded_id() -> Option<String> {
-    LOADED
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
-        .map(|l| l.id.clone())
+pub fn loaded_id() -> Option<String> {
+    LOADED_ID.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn ensure_loaded(loaded: &mut Option<Loaded>, id: &str) -> Result<()> {
+    if loaded.as_ref().is_some_and(|l| l.id == id) {
+        return Ok(());
+    }
+    // ggml logs every kernel it compiles; failures come back as errors
+    static QUIET: std::sync::Once = std::sync::Once::new();
+    QUIET.call_once(transcribe_cpp::disable_logging);
+    let model = find(id)?;
+    let session = transcribe_cpp::Model::load(&model.path)
+        .and_then(|m| m.session())
+        .map_err(|e| failed(format!("can't load {id}: {e}")))?;
+    *loaded = Some(Loaded {
+        id: id.into(),
+        session,
+    });
+    *LOADED_ID.lock().unwrap_or_else(|e| e.into_inner()) = Some(id.into());
+    Ok(())
+}
+
+/// Loads the model ahead, so the first run doesn't wait for it
+pub fn load(id: &str) -> Result<()> {
+    ensure_loaded(&mut LOADED.lock().unwrap_or_else(|e| e.into_inner()), id)
+}
+
+/// Frees the model; ggml's Metal backend aborts at exit while one is loaded
+pub fn unload() {
+    LOADED.lock().unwrap_or_else(|e| e.into_inner()).take();
+    LOADED_ID.lock().unwrap_or_else(|e| e.into_inner()).take();
 }
 
 /// The text of pcm, 16 kHz mono samples in [-1, 1], by the model id
 pub fn transcribe(id: &str, pcm: &[f32]) -> Result<String> {
     let mut loaded = LOADED.lock().unwrap_or_else(|e| e.into_inner());
-    if loaded.as_ref().is_none_or(|l| l.id != id) {
-        // ggml logs every kernel it compiles; failures come back as errors
-        static QUIET: std::sync::Once = std::sync::Once::new();
-        QUIET.call_once(transcribe_cpp::disable_logging);
-        let model = find(id)?;
-        let session = transcribe_cpp::Model::load(&model.path)
-            .and_then(|m| m.session())
-            .map_err(|e| failed(format!("can't load {id}: {e}")))?;
-        *loaded = Some(Loaded {
-            id: id.into(),
-            session,
-        });
-    }
+    ensure_loaded(&mut loaded, id)?;
     let session = &mut loaded.as_mut().expect("loaded above").session;
     let transcript = session
         .run(pcm, &transcribe_cpp::RunOptions::default())
@@ -228,29 +247,37 @@ pub fn transcribe(id: &str, pcm: &[f32]) -> Result<String> {
     Ok(transcript.text.trim().to_string())
 }
 
-pub fn run(args: &[String]) -> Result<()> {
+/// Runs a compute command on the caller's input and output, in the
+/// service, which keeps the model loaded
+pub fn run(args: &[String], input: &mut dyn Read, out: &mut dyn Write) -> Result<()> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let write = |out: &mut dyn Write, text: &dyn std::fmt::Display| {
+        writeln!(out, "{text}").map_err(|e| failed(format!("can't write the answer: {e}")))
+    };
     match args.as_slice() {
-        ["-h" | "--help", ..] => println!("{USAGE}"),
+        ["-h" | "--help", ..] => write(out, &USAGE)?,
         [LOCAL, "models"] => {
             let models: Vec<Value> = models().iter().map(Model::to_json).collect();
-            println!("{}", Value::from(models));
+            write(out, &Value::from(models))?;
         }
         [LOCAL, "run", id, kind] => {
             if *kind != WAV {
                 return Err(Error::Unknown(format!("{id} doesn't take {kind}")));
             }
-            let mut input = vec![];
-            std::io::stdin()
-                .read_to_end(&mut input)
+            let mut wav = vec![];
+            input
+                .read_to_end(&mut wav)
                 .map_err(|e| failed(format!("can't read INPUT: {e}")))?;
-            let pcm = wav::parse(&input).map_err(failed)?;
-            let text = transcribe(id, &pcm);
-            // ggml's Metal backend aborts at exit while a model is loaded
-            LOADED.lock().unwrap_or_else(|e| e.into_inner()).take();
-            let text = text?;
-            let mut out = std::io::stdout();
-            writeln!(out, "{text}").map_err(|e| failed(format!("can't write the answer: {e}")))?;
+            let pcm = wav::parse(&wav).map_err(failed)?;
+            write(out, &transcribe(id, &pcm)?)?;
+        }
+        [LOCAL, "load", id] => {
+            load(id)?;
+            write(out, &format!("loaded {id}"))?;
+        }
+        [LOCAL, "unload"] => {
+            unload();
+            write(out, &"unloaded")?;
         }
         [addr, ..] if *addr != LOCAL => {
             return Err(failed(format!(

@@ -35,9 +35,9 @@ pub fn socket() -> Result<PathBuf> {
 }
 
 /// A command the service answers in its own process, as one that keeps
-/// state must: its arguments, the client's stdout, and whether the client
-/// is gone
-pub type Here = fn(&[String], &mut File, &AtomicBool) -> Result<()>;
+/// state must: its arguments, the client's stdin and stdout, and whether
+/// the client is gone
+pub type Here = fn(&[String], &mut File, &mut File, &AtomicBool) -> Result<()>;
 
 /// here picks the commands the service answers itself; start runs once
 /// before the service takes clients
@@ -95,7 +95,7 @@ fn answer(stream: UnixStream, here: fn(&[String]) -> Option<Here>) -> Result<()>
     })?;
 
     if let Some(command) = here(&args) {
-        return answer_here(stream, command, &args, stdout, stderr);
+        return answer_here(stream, command, &args, [stdin, stdout, stderr]);
     }
 
     let exe = std::env::current_exe().map_err(|e| failed(format!("can't find hunch-host: {e}")))?;
@@ -162,9 +162,9 @@ fn answer_here(
     stream: UnixStream,
     command: Here,
     args: &[String],
-    stdout: OwnedFd,
-    stderr: OwnedFd,
+    fds: [OwnedFd; 3],
 ) -> Result<()> {
+    let [stdin, stdout, stderr] = fds;
     let gone = Arc::new(AtomicBool::new(false));
     let watcher = {
         let gone = Arc::clone(&gone);
@@ -176,8 +176,9 @@ fn answer_here(
             gone.store(true, Ordering::Relaxed);
         })
     };
+    let mut input = File::from(stdin);
     let mut out = File::from(stdout);
-    let code = match command(&args[1..], &mut out, &gone) {
+    let code = match command(&args[1..], &mut input, &mut out, &gone) {
         Ok(()) => 0,
         Err(e) => {
             let _ = writeln!(File::from(stderr), "hunch-host: {e}");

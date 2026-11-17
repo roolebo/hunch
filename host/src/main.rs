@@ -54,7 +54,11 @@ fn run(args: &[String]) -> Result<()> {
         #[cfg(feature = "wm")]
         [role, rest @ ..] if role == "wm" => wm::run(rest)?,
         #[cfg(feature = "compute")]
-        [role, rest @ ..] if role == "compute" => compute::run(rest)?,
+        [role, rest @ ..] if role == "compute" => {
+            let ran = compute::run(rest, &mut std::io::stdin(), &mut std::io::stdout());
+            compute::unload();
+            ran?
+        }
         [] => return Err(Error::Usage("missing ROLE".into(), USAGE)),
         [role, ..] => {
             return Err(Error::Usage(
@@ -72,6 +76,9 @@ fn here(args: &[String]) -> Option<service::Here> {
     match args.first().map(String::as_str) {
         #[cfg(all(feature = "seat", target_os = "macos"))]
         Some("seat") if args.get(1).is_none_or(|a| a != "-h" && a != "--help") => Some(seat::run),
+        // In the service, which keeps the model loaded between runs
+        #[cfg(feature = "compute")]
+        Some("compute") => Some(|args, input, out, _| compute::run(args, input, out)),
         _ => None,
     }
 }

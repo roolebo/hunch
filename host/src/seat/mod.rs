@@ -26,6 +26,7 @@ Commands:
   model MODEL           Transcribe with MODEL
   target TARGET         Send dictation to TARGET
   submit on|off         Press Enter after the text, or not
+  preload on|off        Load the model at start, or at the first dictation
   key KEY               Dictate while KEY is held: right-command,
                         right-option, right-control, right-shift or fn
   compute COMPUTE       Transcribe with COMPUTE; localhost local: so far
@@ -50,6 +51,8 @@ struct Settings {
     target: String,
     submit: bool,
     key: String,
+    /// Load the model at start, rather than at the first dictation
+    preload: bool,
 }
 
 struct State {
@@ -86,6 +89,7 @@ fn load() -> Settings {
         model: saved["model"].as_str().map(String::from),
         target: saved["target"].as_str().unwrap_or(FOCUS).into(),
         submit: saved["submit"].as_bool().unwrap_or(true),
+        preload: saved["preload"].as_bool().unwrap_or(true),
         key: saved["key"]
             .as_str()
             .filter(|k| dictation_key(k).is_some())
@@ -101,6 +105,7 @@ fn save(settings: &Settings) {
         "target": settings.target,
         "submit": settings.submit,
         "key": settings.key,
+        "preload": settings.preload,
     });
     let saved = path
         .parent()
@@ -148,13 +153,26 @@ fn context(state: &State) -> Value {
         "target": state.settings.target,
         "submit": state.settings.submit,
         "key": state.settings.key,
+        "preload": state.settings.preload,
         "error": state.error,
     })
 }
 
+/// Loads the model in the background, so the first dictation doesn't wait
+fn preload(model: String) {
+    thread::spawn(move || {
+        if let Err(e) = compute::load(&model) {
+            change(|s| s.error = Some(e.to_string()));
+        }
+    });
+}
+
 /// Starts watching the dictation key; the service calls it once
 pub fn start() {
-    seat();
+    let settings = lock().settings.clone();
+    if let (true, Some(model)) = (settings.preload, settings.model) {
+        preload(model);
+    }
     // Opening the microphone can take a while, longer if macOS asks the
     // human first, so keys are handled on a thread of their own
     let (keys, pressed) = mpsc::channel();
@@ -207,6 +225,7 @@ fn press() {
     if lock().settings.model.is_none() {
         return change(|s| s.error = Some("no model: pick one in the tray".into()));
     }
+    eprintln!("hunch-host: dictation starts");
     let recording = audio::Recording::start();
     change(|s| match recording {
         Ok(recording) => {
@@ -228,9 +247,13 @@ fn release() {
         return;
     };
     let settings = lock().settings.clone();
+    eprintln!("hunch-host: dictation ends, transcribing");
     change(|s| s.transcribing = true);
     thread::spawn(move || {
         let result = dictate(recording, &settings);
+        if let Err(e) = &result {
+            eprintln!("hunch-host: dictation failed: {e}");
+        }
         change(|s| {
             s.transcribing = false;
             s.error = result.err().map(|e| e.to_string());
@@ -361,7 +384,7 @@ fn set(apply: impl FnOnce(&mut Settings)) {
 }
 
 /// Answers a seat command in the service, writing to the client's stdout
-pub fn run(args: &[String], out: &mut File, gone: &AtomicBool) -> Result<()> {
+pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool) -> Result<()> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let said = match args.as_slice() {
         ["-h" | "--help", ..] => USAGE.to_string(),
@@ -370,6 +393,9 @@ pub fn run(args: &[String], out: &mut File, gone: &AtomicBool) -> Result<()> {
         ["model", model] => {
             compute::find(model)?;
             set(|s| s.model = Some(model.to_string()));
+            if lock().settings.preload {
+                preload(model.to_string());
+            }
             format!("model {model}")
         }
         ["target", FOCUS] => {
@@ -391,6 +417,17 @@ pub fn run(args: &[String], out: &mut File, gone: &AtomicBool) -> Result<()> {
             }
             set(|s| s.key = key.to_string());
             format!("key {key}")
+        }
+        ["preload", on @ ("on" | "off")] => {
+            let preloading = *on == "on";
+            set(|s| s.preload = preloading);
+            match lock().settings.model.clone() {
+                Some(model) if preloading => preload(model),
+                // Off frees the memory now, not only after a restart
+                _ if !preloading => compute::unload(),
+                _ => {}
+            }
+            format!("preload {on}")
         }
         ["submit", on @ ("on" | "off")] => {
             set(|s| s.submit = *on == "on");

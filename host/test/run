@@ -7,12 +7,17 @@
 # settings stay untouched. A test that needs a client attached to tmux
 # runs it in a second tmux server, as a terminal.
 #
+# HUNCH_TEST_MODEL, a speech model in the human's Hugging Face cache, adds
+# the tests that load and run it; they make speech with macOS's say.
+#
 
 set -e
 
 CURDIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 ROOT=$(dirname "$CURDIR")
 HOST=$ROOT/target/debug/hunch-host
+# The tests make their own; a model test reads the human's
+REAL_HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}
 # Short, since a unix socket's path has room for about 100 bytes
 DIR=$(mktemp -d /tmp/hunch-host-test.XXXXXX)
 FAILED=0
@@ -463,9 +468,29 @@ test_compute_run_errors() {
   call compute local: run org/speech audio/wav
   check status "$STATUS" 1
   check_has err "$ERR" "isn't a WAV file"
+  call compute local: load org/speech
+  check status "$STATUS" 1
+  check_has err "$ERR" "can't load org/speech"
+  call compute local: unload
+  check status "$STATUS" 0
   call compute remote: models
   check status "$STATUS" 1
   check_has err "$ERR" "only local:"
+}
+
+test_compute_transcribes() {
+  [ -n "$HUNCH_TEST_MODEL" ] && macos || return 0
+  ln -s "$REAL_HF_HOME/hub" "$HF_HOME/hub"
+  say -o "$TEST_DIR/hello.wav" --data-format=LEI16@16000 "Hello world"
+  IN=$TEST_DIR/hello.wav
+  call compute local: run "$HUNCH_TEST_MODEL" audio/wav
+  check status "$STATUS" 0
+  check_has text "$(tr '[:upper:]' '[:lower:]' <<< "$OUT")" hello
+  call compute local: models
+  check loaded "$(jq ".[] | select(.id == \"$HUNCH_TEST_MODEL\") | .loaded" <<< "$OUT")" true
+  call compute local: unload
+  call compute local: models
+  check unloaded "$(jq ".[] | select(.id == \"$HUNCH_TEST_MODEL\") | .loaded" <<< "$OUT")" false
 }
 
 seat() {
@@ -477,9 +502,9 @@ test_seat_context() {
   seat context
   check status "$STATUS" 0
   check fields "$(jq -c 'keys' <<< "$OUT")" \
-    '["compute","error","idle","key","locked","model","recording","submit","target","transcribing","wm"]'
-  check defaults "$(jq -c '{key, model, target, submit}' <<< "$OUT")" \
-    '{"key":"right-command","model":null,"target":"focus","submit":true}'
+    '["compute","error","idle","key","locked","model","preload","recording","submit","target","transcribing","wm"]'
+  check defaults "$(jq -c '{key, model, target, submit, preload}' <<< "$OUT")" \
+    '{"key":"right-command","model":null,"target":"focus","submit":true,"preload":true}'
 }
 
 test_seat_settings_stay() {
@@ -488,14 +513,15 @@ test_seat_settings_stay() {
   seat key right-option
   check status "$STATUS" 0
   seat submit off
+  seat preload off
   seat target localhost tmux:/tmp/x %1
   seat model org/speech
   check status "$STATUS" 0
   stop
   serve
   seat context
-  check settings "$(jq -c '{key, model, target, submit}' <<< "$OUT")" \
-    '{"key":"right-option","model":"org/speech","target":"localhost tmux:/tmp/x %1","submit":false}'
+  check settings "$(jq -c '{key, model, target, submit, preload}' <<< "$OUT")" \
+    '{"key":"right-option","model":"org/speech","target":"localhost tmux:/tmp/x %1","submit":false,"preload":false}'
 }
 
 test_seat_errors() {
