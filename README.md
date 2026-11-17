@@ -177,7 +177,8 @@ window:
     hunch find agent
 
 To talk to the agent from Vim, add a dictation app that pastes into the
-terminal, e.g. [Handy] on Linux, macOS and Windows, or [Pipit] on macOS.
+terminal, e.g. the Hunch app in [macos](macos), [Handy] on Linux, macOS
+and Windows, or [Pipit] on macOS.
 
 ## Editor protocol
 
@@ -219,6 +220,17 @@ A reply has the command's `id` and either `result`, any JSON value, or
 {"id": 3, "command": "dom", "args": ["main"]}
 {"id": 3, "result": "<main><p>First paragraph.</p></main>"}
 ```
+
+## Host protocols
+
+A host serves what it has through `hunch-host`, specified in
+[skills/hunch/HOST.md](skills/hunch/HOST.md): its window managers
+([WM.md](skills/hunch/WM.md)), a compute that runs models
+([COMPUTE.md](skills/hunch/COMPUTE.md)) and the seat where the human sits
+([SEAT.md](skills/hunch/SEAT.md)).
+
+[host](host) implements them, with tmux and macOS as window managers,
+local speech models, and dictation on macOS; [macos](macos) is its tray.
 
 ## Agents
 
