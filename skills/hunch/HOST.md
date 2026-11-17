@@ -91,6 +91,10 @@ the commands of BROWSER.md:
 
     hunch-host browser COMMAND [ARGUMENTS]
 
+The human lets a browser's extension reach the service once:
+
+    hunch-host browser install BROWSER
+
 Its pages go to one host at a time, localhost until the human picks
 another:
 

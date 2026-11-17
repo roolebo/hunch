@@ -1,6 +1,8 @@
 //! hunch-host serves what a host has to hunch; skills/hunch/HOST.md
 //! specifies it.
 
+#[cfg(all(unix, feature = "browser"))]
+mod browser;
 #[cfg(feature = "compute")]
 mod compute;
 mod error;
@@ -26,6 +28,7 @@ Roles:
   wm ADDR       a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
   compute ADDR  runs models, e.g. local:
   seat          where the human sits: dictation
+  browser       the browser the human uses at the seat
 
 hunch-host ROLE --help lists the commands of ROLE.
 wms prints the window managers not inside another one.
@@ -50,6 +53,10 @@ fn run(args: &[String]) -> Result<()> {
             return Err(Error::Failed(
                 "the seat lives in the service: run it with hunch-host serve".into(),
             ));
+        }
+        #[cfg(all(unix, feature = "browser"))]
+        [role, flag] if role == "browser" && (flag == "-h" || flag == "--help") => {
+            println!("{}", browser::USAGE)
         }
         #[cfg(feature = "wm")]
         [role, rest @ ..] if role == "wm" => wm::run(rest)?,
@@ -76,6 +83,9 @@ fn here(args: &[String]) -> Option<service::Here> {
     match args.first().map(String::as_str) {
         #[cfg(all(feature = "seat", target_os = "macos"))]
         Some("seat") if args.get(1).is_none_or(|a| a != "-h" && a != "--help") => Some(seat::run),
+        // In the service, which holds the extensions' connections
+        #[cfg(feature = "browser")]
+        Some("browser") => Some(browser::run),
         // In the service, which keeps the model loaded between runs
         #[cfg(feature = "compute")]
         Some("compute") => Some(|args, input, out, _| compute::run(args, input, out)),
@@ -185,7 +195,16 @@ fn needs(flags: &[String]) -> Result<()> {
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // The browser runs it by this name for its extension, with arguments
+    // of its own
+    #[cfg(all(unix, feature = "browser"))]
+    if std::env::args_os()
+        .next()
+        .is_some_and(|exe| std::path::Path::new(&exe).file_name() == Some(browser::NATIVE.as_ref()))
+    {
+        args = vec!["browser".into(), "connect".into()];
+    }
     let status = if runs_here(&args) {
         run(&args).map(|()| 0)
     } else {

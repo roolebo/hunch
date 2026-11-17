@@ -2,12 +2,13 @@
 
 Serves what a host has to hunch, as the protocols in
 [skills/hunch](../skills/hunch) specify: the host's window managers,
-its compute and its seat.
+its compute, its seat and the browser used at it.
 
     hunch-host serve
     hunch-host wm ADDR COMMAND [ARGUMENTS]
     hunch-host compute ADDR COMMAND [ARGUMENTS]
     hunch-host seat COMMAND [ARGUMENTS]
+    hunch-host browser COMMAND [ARGUMENTS]
 
 Every command but serve asks the service, which runs it on the caller's
 stdin, stdout and stderr, so the service has to run first.
@@ -37,6 +38,19 @@ Window managers:
 
 - tmux, on any Unix: every command but pick
 - macOS: context, displays, windows, send, submit and pick
+
+A browser's extension reaches the service by native messaging, as the
+host `hunch`: the browser starts `hunch-host-native`, a link to
+hunch-host that `hunch-host browser install` makes. Each message is a
+JSON object, its length before it in 4 bytes of native byte order:
+
+- the extension says `{"hello": {"name": "Firefox"}}` first
+- a command comes as `{"id": 3, "command": "dom", "args": ["#b"]}`, a
+  command of [BROWSER.md](../skills/hunch/BROWSER.md)
+- the extension replies `{"id": 3, "result": ...}` or `{"id": 3,
+  "error": "..."}`
+- `{"focus": true}` says the human switched to this browser: commands
+  go to the browser used last
 
 Each role is a Cargo feature, all on by default; a build can leave out
 the ones a host doesn't need, e.g. `cargo build --no-default-features

@@ -555,6 +555,103 @@ test_seat_watch() {
   check lines "$(jq -c .submit "$TEST_DIR/watch" | paste -sd' ' -)" "true false"
 }
 
+# A browser's extension, as native messaging frames it: says hello as
+# NAME, then answers each command
+extension() {
+  local message
+  local id
+  frame "{\"hello\": {\"name\": \"$1\"}}"
+  while message=$(receive); [ -n "$message" ]; do
+    id=$(jq .id <<< "$message")
+    case $(jq -r '.command + " " + (.args | join(" "))' <<< "$message") in
+      "context ") frame "{\"id\": $id, \"result\": {\"tab\": 7, \"title\": \"$1\", \"selection\": null}}" ;;
+      "read ") frame "{\"id\": $id, \"result\": \"text of $1\"}" ;;
+      "selection ") frame "{\"id\": $id, \"result\": null}" ;;
+      *) frame "{\"id\": $id, \"error\": \"No element matches\"}" ;;
+    esac
+  done
+}
+
+# Writes MESSAGE with its length before it, in native byte order
+frame() {
+  LC_ALL=C le 4 ${#1}
+  printf '%s' "$1"
+}
+
+# Reads a message: its length, then that many bytes, a byte at a time so
+# nothing after it is read
+receive() {
+  local length
+  length=$(dd bs=1 count=4 2> /dev/null | od -An -tu4 | tr -d ' ')
+  [ -n "$length" ] || return 0
+  dd bs=1 count="$length" 2> /dev/null
+}
+
+# Connects an extension as NAME, as the browser does: through
+# hunch-host-native, on pipes
+browse() {
+  local pipes=$TEST_DIR/$1
+  mkfifo "$pipes.in" "$pipes.out"
+  ln -sf "$HOST" "$TEST_DIR/hunch-host-native"
+  # Each opens the pipe the other opens first, or both would wait
+  extension "$1" > "$pipes.out" < "$pipes.in" &
+  "$TEST_DIR/hunch-host-native" /manifest/path firefox-hunch@hunch \
+    < "$pipes.out" > "$pipes.in" 2>> "$TEST_DIR/native.log" &
+  wait_for connected "$1" || die "$1 didn't connect"
+}
+
+connected() {
+  "$HOST" browser status | jq -e --arg name "$1" '.browsers | index($name)' > /dev/null
+}
+
+test_browser_answers() {
+  browse Firefox
+  call browser read
+  check status "$STATUS" 0
+  check read "$OUT" "text of Firefox"
+  call browser context
+  check context "$(jq -cS . <<< "$OUT")" '{"selection":null,"tab":7,"title":"Firefox"}'
+  call browser selection
+  check selection "$OUT" ""
+  call browser dom '#x'
+  check status "$STATUS" 1
+  check_has err "$ERR" "Firefox: No element matches"
+}
+
+test_browser_last_used() {
+  browse Firefox
+  browse Safari
+  call browser read
+  check newest "$OUT" "text of Safari"
+  call browser status
+  check status "$(jq -cS . <<< "$OUT")" \
+    '{"allow":[],"browsers":["Safari","Firefox"],"serves":"localhost"}'
+}
+
+test_browser_none() {
+  call browser read
+  check status "$STATUS" 1
+  check_has err "$ERR" "no browser is connected"
+  call browser close
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown command"
+}
+
+test_browser_install() {
+  local manifest
+  call browser install firefox
+  check status "$STATUS" 0
+  if macos; then
+    manifest="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts/hunch.json"
+  else
+    manifest=$HOME/.mozilla/native-messaging-hosts/hunch.json
+  fi
+  check out "$OUT" "installed $manifest"
+  check extension "$(jq -c .allowed_extensions "$manifest")" '["firefox-hunch@hunch"]'
+  check native "$(basename "$(jq -r .path "$manifest")")" hunch-host-native
+  check target "$(readlink "$(jq -r .path "$manifest")")" "$HOST"
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))

@@ -6,8 +6,9 @@ description = "Serves a host's roles to hunch: window managers, seat, compute"
 license = "MIT"
 
 [features]
-default = ["wm", "compute", "seat"]
+default = ["wm", "compute", "seat", "browser"]
 wm = []
+browser = []
 compute = ["dep:transcribe-cpp"]
 seat = ["wm", "compute", "dep:cpal"]
 
