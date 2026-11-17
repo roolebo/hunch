@@ -290,7 +290,10 @@ fn open_microphone() {
     let opening = Instant::now();
     let recording = audio::Recording::start();
     let took = opening.elapsed();
-    eprintln!("hunch-host: the microphone took {} ms to open", took.as_millis());
+    eprintln!(
+        "hunch-host: the microphone took {} ms to open",
+        took.as_millis()
+    );
     change(|s| {
         s.opener = false;
         let held = std::mem::take(&mut s.opening);
@@ -341,7 +344,9 @@ fn release() {
 fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
     let pcm = recording.stop();
     if pcm.is_empty() {
-        return Err(failed("the key went up before the microphone sent any sound"));
+        return Err(failed(
+            "the key went up before the microphone sent any sound",
+        ));
     }
     if pcm.iter().all(|&s| s == 0.0) {
         return Err(failed(
