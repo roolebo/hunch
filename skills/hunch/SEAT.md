@@ -117,7 +117,9 @@ Rules:
   icon or the indicator of the phone's OS. The seat doesn't record from a
   device it can't show this way.
 - The tray shows which inputs are in use, whether they get a signal, and
-  where their data goes.
+  where their data goes: the speech to COMPUTE's host, the text to
+  TARGET's, the browser's pages to the host it serves. For speech and
+  pages it offers only the hosts in their allow.
 - Only the human sets allow, in the seat's config or from the tray; no
   command sets it.
 - Escape, or another key while KEY is held, cancels the recording: KEY

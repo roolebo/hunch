@@ -13,9 +13,9 @@ From another host, through ssh:
 
     ssh HOST hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
 
-ROLE is `wm`, `compute` or `seat`, each with its own protocol in this
-directory. A wm and a compute take an ADDR, since a host can have
-several; a seat doesn't, since a host has at most one.
+ROLE is `wm`, `compute`, `seat` or `browser`, each with its own protocol
+in this directory. A wm and a compute take an ADDR, since a host can have
+several; a seat and a browser don't, since a host has at most one.
 
 ## Service
 
@@ -67,3 +67,35 @@ On macOS:
 
 The service finds a need when the OS refuses it something. It never
 grants itself anything: the human or the host's admin does.
+
+## Browser
+
+The browser the human uses at the seat serves hunch through the
+service: its extension talks to hunch-host over the browser's native
+messaging, so no port is open and no secret is kept. Agents ask it with
+the commands of BROWSER.md:
+
+    hunch-host browser COMMAND [ARGUMENTS]
+
+Its pages go to one host at a time, localhost until the human picks
+another:
+
+    hunch-host browser serve HOST   serve the agents of HOST
+    hunch-host browser status       the browsers connected and the HOST
+                                    served, as JSON
+
+To serve another host, the seat's service keeps `ssh HOST hunch-host
+browser relay` running, and HOST's service passes its agents' commands
+through it: the connection goes out from the seat, as the human's ssh
+does. serve fails for a HOST not in the browser's allow, which only the
+human sets, as for a mic (see SEAT.md).
+
+status JSON:
+
+- `browsers`: the name of each browser connected
+- `serves`: the HOST its pages go to
+- `allow`: the hosts its pages may go to
+
+```json
+{"browsers": ["Firefox", "Safari"], "serves": "thinkstation", "allow": ["thinkstation"]}
+```

@@ -14,6 +14,11 @@ To use the browser, run its handler:
 The browser may run on another host than the handler, e.g. on the machine
 the human sits at, while the agent runs on a remote one.
 
+Where hunch-host runs, a browser serves through it instead (see
+HOST.md): when no browser registers in the agent's window, the agent
+asks `hunch-host browser`, which answers for the browser that serves its
+host.
+
 Terms:
 
     TAB         a tab, by an id the browser gives it, unique while it's open
