@@ -511,13 +511,13 @@ struct Pill: View {
                     .animation(.easeInOut(duration: 0.7).repeatForever(), value: pulse)
                     .onAppear { pulse = true }
                     .onDisappear { pulse = false }
-                Text("Listening")
+                Text("Listening…")
             case .loading:
                 ProgressView().controlSize(.small)
                 Text("Loading model…")
             case .transcribing:
                 ProgressView().controlSize(.small)
-                Text("Transcribing")
+                Text("Transcribing…")
             case .picking:
                 Image(systemName: "cursorarrow.click.2")
                 Text("Click a window · Esc cancels")
