@@ -321,15 +321,15 @@ fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
         text.chars().count(),
         settings.target
     );
-    match deliver(&settings.target, &text, settings.submit) {
-        // The window picked is gone: back to the focus, as the human sees
-        Err(Error::Gone(_)) => {
-            change(|s| s.settings.target = FOCUS.into());
-            save(&lock().settings);
-            deliver(FOCUS, &text, settings.submit)
-        }
-        delivered => delivered,
+    // Never to another window instead: text that didn't arrive where the
+    // human meant it to fails, and waits for them to copy it
+    let delivered = deliver(&settings.target, &text, settings.submit);
+    if let Err(Error::Gone(_)) = delivered {
+        // The window picked is closed: the next dictation goes to the focus
+        change(|s| s.settings.target = FOCUS.into());
+        save(&lock().settings);
     }
+    delivered.map_err(|e| failed(format!("{e}; the text waits in Copy Last Transcription")))
 }
 
 fn deliver(target: &str, text: &str, submit: bool) -> Result<()> {
