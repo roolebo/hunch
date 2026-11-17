@@ -99,6 +99,7 @@ func ask(_ grant: String) {
 /// The seat as watch prints it
 struct SeatState: Decodable {
     let recording: Bool
+    let opening: Bool
     let transcribing: Bool
     let loading: Bool
     let model: String?
@@ -468,7 +469,7 @@ func floatingPanel() -> NSPanel {
 @MainActor
 final class Overlay: ObservableObject {
     enum Mode: Equatable {
-        case hidden, listening, loading, transcribing, picking
+        case hidden, opening, listening, loading, transcribing, picking
         case error(String)
     }
 
@@ -512,6 +513,9 @@ struct Pill: View {
                     .onAppear { pulse = true }
                     .onDisappear { pulse = false }
                 Text("Listening…")
+            case .opening:
+                ProgressView().controlSize(.small)
+                Text("Opening the microphone…")
             case .loading:
                 ProgressView().controlSize(.small)
                 Text("Loading model…")
@@ -710,7 +714,9 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
         if picking {
             return
         }
-        if state.recording {
+        if state.opening {
+            overlay.show(.opening)
+        } else if state.recording {
             overlay.show(.listening)
         } else if state.transcribing {
             overlay.show(state.loading ? .loading : .transcribing)
