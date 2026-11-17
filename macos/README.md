@@ -8,7 +8,7 @@ the service does and needs, and set the seat.
     open build/Hunch.app
 
 On first launch it asks for the grants the service needs: Accessibility,
-Input Monitoring, Microphone and Screen Recording. macOS ties them to
+Microphone and Screen Recording. macOS ties them to
 the app's signature, so with the default ad hoc signature it asks again
 after each build; a certificate keeps them:
 

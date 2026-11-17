@@ -69,7 +69,6 @@ let panes = [
     "Screen Recording": ("Privacy_ScreenCapture", "rectangle.dashed.badge.record"),
     "Accessibility": ("Privacy_Accessibility", "accessibility"),
     "Microphone": ("Privacy_Microphone", "mic"),
-    "Input Monitoring": ("Privacy_ListenEvent", "keyboard"),
     "Camera": ("Privacy_Camera", "camera"),
 ]
 
@@ -86,8 +85,6 @@ func ask(_ grant: String) {
     switch grant {
     case "Screen Recording":
         _ = CGRequestScreenCaptureAccess()
-    case "Input Monitoring":
-        _ = CGRequestListenEventAccess()
     case "Accessibility":
         let prompt = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
