@@ -27,6 +27,8 @@ Commands:
   target TARGET         Send dictation to TARGET
   submit on|off         Press Enter after the text, or not
   preload on|off        Load the model at start, or at the first dictation
+  warm MINUTES|always   Keep the model in GPU memory this long while idle,
+                        from the service's next start
   key KEY               Dictate while KEY is held: right-command,
                         right-option, right-control, right-shift or fn
   compute COMPUTE       Transcribe with COMPUTE; localhost local: so far
@@ -37,6 +39,9 @@ const WM: &str = "macos:";
 const FOCUS: &str = "focus";
 const LOCALHOST: &str = "localhost";
 const COMPUTE: &str = "localhost local:";
+const WARM_VAR: &str = "GGML_METAL_RESIDENCY_KEEP_ALIVE_S";
+/// Ten years, in seconds: as good as always, and within an int
+const WARM_ALWAYS: &str = "315360000";
 /// Handy's default, which the human knows
 const DEFAULT_KEY: &str = "right-command";
 /// How often a watch checks whether its client is gone
@@ -53,12 +58,17 @@ struct Settings {
     key: String,
     /// Load the model at start, rather than at the first dictation
     preload: bool,
+    /// Minutes the loaded model stays in GPU memory while idle; None keeps
+    /// it there always
+    warm: Option<u64>,
 }
 
 struct State {
     settings: Settings,
     recording: Option<audio::Recording>,
     transcribing: bool,
+    /// The model is loading, at start or for a dictation
+    loading: bool,
     error: Option<String>,
     /// Counts changes, so a watch sees each
     version: u64,
@@ -90,6 +100,7 @@ fn load() -> Settings {
         target: saved["target"].as_str().unwrap_or(FOCUS).into(),
         submit: saved["submit"].as_bool().unwrap_or(true),
         preload: saved["preload"].as_bool().unwrap_or(true),
+        warm: saved["warm"].as_u64(),
         key: saved["key"]
             .as_str()
             .filter(|k| dictation_key(k).is_some())
@@ -106,6 +117,7 @@ fn save(settings: &Settings) {
         "submit": settings.submit,
         "key": settings.key,
         "preload": settings.preload,
+        "warm": settings.warm,
     });
     let saved = path
         .parent()
@@ -122,6 +134,7 @@ fn seat() -> &'static Seat {
             settings: load(),
             recording: None,
             transcribing: false,
+            loading: false,
             error: None,
             version: 0,
         }),
@@ -148,28 +161,49 @@ fn context(state: &State) -> Value {
         "wm": WM,
         "recording": state.recording.is_some(),
         "transcribing": state.transcribing,
+        "loading": state.loading,
         "compute": COMPUTE,
         "model": state.settings.model,
         "target": state.settings.target,
         "submit": state.settings.submit,
         "key": state.settings.key,
         "preload": state.settings.preload,
+        "warm": state.settings.warm,
         "error": state.error,
     })
+}
+
+/// Loads the model, if it isn't, telling watches while it does
+fn load_model(model: &str) -> Result<()> {
+    if compute::loaded_id().as_deref() == Some(model) {
+        return Ok(());
+    }
+    change(|s| s.loading = true);
+    let loaded = compute::load(model);
+    change(|s| s.loading = false);
+    loaded
 }
 
 /// Loads the model in the background, so the first dictation doesn't wait
 fn preload(model: String) {
     thread::spawn(move || {
-        if let Err(e) = compute::load(&model) {
+        if let Err(e) = load_model(&model) {
             change(|s| s.error = Some(e.to_string()));
         }
     });
 }
 
-/// Starts watching the dictation key; the service calls it once
+/// Starts watching the dictation key; the service calls it once, before
+/// it starts any thread
 pub fn start() {
     let settings = lock().settings.clone();
+    // ggml reads it once, when it loads the first model, and lets the
+    // model's GPU memory go after it's idle this long
+    let seconds = settings
+        .warm
+        .map_or(WARM_ALWAYS.to_string(), |m| (m * 60).to_string());
+    // SAFETY: no other thread runs yet to read the environment
+    unsafe { std::env::set_var(WARM_VAR, seconds) };
     if let (true, Some(model)) = (settings.preload, settings.model) {
         preload(model);
     }
@@ -269,6 +303,7 @@ fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
         ));
     }
     let model = settings.model.as_deref().expect("press checks for a model");
+    load_model(model)?;
     let text = compute::transcribe(model, &pcm)?;
     if text.is_empty() {
         eprintln!("hunch-host: dictation heard no words");
@@ -417,6 +452,19 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
             }
             set(|s| s.key = key.to_string());
             format!("key {key}")
+        }
+        ["warm", "always"] => {
+            set(|s| s.warm = None);
+            "warm always, from the service's next start".into()
+        }
+        ["warm", minutes] => {
+            let minutes: u64 = minutes.parse().ok().filter(|m| *m > 0).ok_or_else(|| {
+                failed(format!(
+                    "MINUTES is a whole number above 0, or always, not {minutes}"
+                ))
+            })?;
+            set(|s| s.warm = Some(minutes));
+            format!("warm {minutes}, from the service's next start")
         }
         ["preload", on @ ("on" | "off")] => {
             let preloading = *on == "on";

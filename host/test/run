@@ -502,9 +502,9 @@ test_seat_context() {
   seat context
   check status "$STATUS" 0
   check fields "$(jq -c 'keys' <<< "$OUT")" \
-    '["compute","error","idle","key","locked","model","preload","recording","submit","target","transcribing","wm"]'
-  check defaults "$(jq -c '{key, model, target, submit, preload}' <<< "$OUT")" \
-    '{"key":"right-command","model":null,"target":"focus","submit":true,"preload":true}'
+    '["compute","error","idle","key","loading","locked","model","preload","recording","submit","target","transcribing","warm","wm"]'
+  check defaults "$(jq -c '{key, model, target, submit, preload, warm}' <<< "$OUT")" \
+    '{"key":"right-command","model":null,"target":"focus","submit":true,"preload":true,"warm":null}'
 }
 
 test_seat_settings_stay() {
@@ -514,14 +514,15 @@ test_seat_settings_stay() {
   check status "$STATUS" 0
   seat submit off
   seat preload off
+  seat warm 10
   seat target localhost tmux:/tmp/x %1
   seat model org/speech
   check status "$STATUS" 0
   stop
   serve
   seat context
-  check settings "$(jq -c '{key, model, target, submit, preload}' <<< "$OUT")" \
-    '{"key":"right-option","model":"org/speech","target":"localhost tmux:/tmp/x %1","submit":false,"preload":false}'
+  check settings "$(jq -c '{key, model, target, submit, preload, warm}' <<< "$OUT")" \
+    '{"key":"right-option","model":"org/speech","target":"localhost tmux:/tmp/x %1","submit":false,"preload":false,"warm":10}'
 }
 
 test_seat_errors() {
@@ -531,6 +532,9 @@ test_seat_errors() {
   check_has err "$ERR" "KEY is one of right-command"
   seat model org/none
   check status "$STATUS" 4
+  seat warm 0
+  check status "$STATUS" 1
+  check_has err "$ERR" "MINUTES is a whole number above 0"
   seat submit maybe
   check status "$STATUS" 1
   check_has err "$ERR" "unknown command"
