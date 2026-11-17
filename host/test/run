@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# test/run: end-to-end tests of hunch-host.
+# test/run: end-to-end tests of hunch-host, through its service.
 #
-# Each test gets its own HOME and tmux servers, under a temporary
-# directory. A test that needs a client attached to tmux runs it in a
+# Each test gets its own HOME, XDG directories, service and tmux servers,
+# all under a temporary directory: the human's own service stays
+# untouched. A test that needs a client attached to tmux runs it in a
 # second tmux server, as a terminal.
 #
 
@@ -32,6 +33,7 @@ EOF
 }
 
 cleanup() {
+  stop
   rm -rf "$DIR"
 }
 
@@ -53,9 +55,24 @@ wait_for() {
   return 1
 }
 
+serve() {
+  "$HOST" serve 2>> "$TEST_DIR/serve.log" &
+  SERVICE=$!
+  wait_for [ -S "$XDG_RUNTIME_DIR/hunch/host.sock" ] ||
+    die "The service didn't start: $(< "$TEST_DIR/serve.log")"
+}
+
 teardown() {
+  stop
   t kill-server 2> /dev/null || true
   terminal kill-server 2> /dev/null || true
+}
+
+stop() {
+  [ -n "$SERVICE" ] || return 0
+  kill "$SERVICE" 2> /dev/null || true
+  wait "$SERVICE" 2> /dev/null || true
+  SERVICE=
 }
 
 # tmux, the one the tests ask hunch-host about
@@ -283,6 +300,61 @@ test_macos_displays() {
     '["height","id","main","name","width","x","y"]'
 }
 
+test_service_runs_once() {
+  call serve
+  check status "$STATUS" 1
+  check_has err "$ERR" "a service already runs"
+}
+
+test_service_replaces_a_stale_socket() {
+  kill -9 "$SERVICE"
+  wait "$SERVICE" 2> /dev/null || true
+  serve
+  call wms
+  check status "$STATUS" 0
+}
+
+test_service_is_needed() {
+  stop
+  call wms
+  check status "$STATUS" 1
+  check_has err "$ERR" "start it with hunch-host serve"
+}
+
+test_service_ends_the_command_of_a_gone_client() {
+  local sent
+  session
+  # A send that waits for its text, and its client that goes away
+  sleep 60 | "$HOST" wm "tmux:$TMUX_SOCKET" send %0 &
+  sent="send %0"
+  wait_for [ "$(running "$sent")" == 2 ] || true
+  check served "$(running "$sent")" 2
+  kill $!
+  wait_for none "$sent" || true
+  check ended "$(running "$sent")" 0
+  pkill -f "sleep 60" || true
+}
+
+# How many processes run COMMAND: the client, and the command the
+# service runs for it
+running() {
+  pgrep -f "$1" | wc -l | tr -d ' '
+}
+
+none() {
+  [ "$(running "$1")" == 0 ]
+}
+
+test_needs() {
+  call needs
+  check status "$STATUS" 0
+  if macos; then
+    check fields "$(jq -c '[.[] | keys] | unique - [["for","grant"]]' <<< "$OUT")" '[]'
+  else
+    check needs "$OUT" '[]'
+  fi
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))
@@ -290,11 +362,13 @@ run() {
   TEST_DIR=$DIR/$N
   IN=$TEST_DIR/in
   TMUX_SOCKET=$TEST_DIR/tmux
-  mkdir -p "$TEST_DIR/home"
+  mkdir -p "$TEST_DIR/home" "$TEST_DIR/run"
   : > "$IN"
   (
     export HOME=$TEST_DIR/home
+    export XDG_RUNTIME_DIR=$TEST_DIR/run
     trap teardown EXIT
+    serve
     "$1"
     exit $((FAILED - failed))
   ) || FAILED=$((FAILED + $?))
@@ -312,7 +386,7 @@ fi
 command -v jq > /dev/null || die "jq is not installed"
 command -v tmux > /dev/null || die "tmux is not installed"
 trap cleanup EXIT
-unset TMUX
+unset HUNCH_HOST_SERVED TMUX
 (cd "$ROOT" && cargo build -q) || die "Can't build hunch-host"
 
 TESTS=("$@")

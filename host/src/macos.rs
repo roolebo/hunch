@@ -68,6 +68,7 @@ unsafe extern "C" {
     fn CGMainDisplayID() -> u32;
     fn CGEventCreate(source: CFTypeRef) -> CFTypeRef;
     fn CGEventGetLocation(event: CFTypeRef) -> Point;
+    fn CGPreflightScreenCaptureAccess() -> bool;
 }
 
 /// A CoreFoundation object this code created, released when dropped
@@ -200,6 +201,13 @@ pub fn displays() -> Vec<CgDisplay> {
             main: id == main,
         })
         .collect()
+}
+
+/// Whether the human let this program record the screen, which window
+/// titles need
+pub fn may_record_screen() -> bool {
+    // SAFETY: takes nothing, only reads the permission
+    unsafe { CGPreflightScreenCaptureAccess() }
 }
 
 pub fn pointer() -> Option<Point> {
