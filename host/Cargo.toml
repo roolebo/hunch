@@ -1,0 +1,13 @@
+[package]
+name = "hunch-host"
+version = "0.1.0"
+edition = "2024"
+description = "Serves a host's roles to hunch: window managers, seat, compute"
+license = "MIT"
+
+[features]
+default = ["wm"]
+wm = []
+
+[dependencies]
+serde_json = "1"
