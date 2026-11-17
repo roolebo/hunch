@@ -1,12 +1,14 @@
-// Draws Hunch's icon, an h in a ring, into an iconset: icon DIR writes
-// DIR/icon_SIZE.png and DIR/icon_SIZE@2x.png. It's drawn here rather than
-// taken from SF Symbols, whose license keeps them out of app icons.
+// Draws Hunch's icon, a bold slanted H on a yellow tile, into an iconset:
+// icon DIR writes DIR/icon_SIZE.png and DIR/icon_SIZE@2x.png. It's drawn
+// here rather than set in a font, so it looks the same on every Mac.
 
 import AppKit
 
-let accent = NSColor(red: 0.45, green: 0.75, blue: 1.0, alpha: 1)
-let tileTop = NSColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 1)
-let tileBottom = NSColor(red: 0.18, green: 0.22, blue: 0.40, alpha: 1)
+let tileTop = CGColor(red: 1.0, green: 0.80, blue: 0.15, alpha: 1)
+let tileBottom = CGColor(red: 1.0, green: 0.42, blue: 0.10, alpha: 1)
+let ink = CGColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1)
+/// How far the H leans: x moves this much per unit of y
+let slant = 0.14
 
 /// The icon at side pixels, drawn on a 512-point grid
 func icon(side: Int) -> NSBitmapImageRep {
@@ -23,27 +25,17 @@ func icon(side: Int) -> NSBitmapImageRep {
     ctx.addPath(CGPath(roundedRect: CGRect(x: 40, y: 40, width: 432, height: 432), cornerWidth: 100, cornerHeight: 100, transform: nil))
     ctx.clip()
     let gradient = CGGradient(
-        colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [tileTop.cgColor, tileBottom.cgColor] as CFArray,
-        locations: [0, 1])!
+        colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [tileTop, tileBottom] as CFArray, locations: [0, 1])!
     ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 512), end: CGPoint(x: 512, y: 0), options: [])
 
-    // The ring
-    ctx.setStrokeColor(accent.cgColor)
-    ctx.setLineWidth(26)
-    ctx.strokeEllipse(in: CGRect(x: 256 - 165, y: 256 - 165, width: 330, height: 330))
-
-    // The h: a stem, and an arch into its leg; ends cut square
-    ctx.setStrokeColor(NSColor.white.cgColor)
-    ctx.setLineWidth(40)
-    ctx.setLineCap(.butt)
-    let left = 256.0 - 58, right = 256.0 + 58, bottom = 256.0 - 95, shoulder = 256.0 + 5
-    ctx.move(to: CGPoint(x: left, y: 256 + 105))
-    ctx.addLine(to: CGPoint(x: left, y: bottom))
-    ctx.strokePath()
-    ctx.move(to: CGPoint(x: left, y: shoulder))
-    ctx.addArc(center: CGPoint(x: 256, y: shoulder), radius: 58, startAngle: .pi, endAngle: 0, clockwise: true)
-    ctx.addLine(to: CGPoint(x: right, y: bottom))
-    ctx.strokePath()
+    // The H: two stems and a crossbar, leaning about the center
+    ctx.translateBy(x: 256, y: 256)
+    ctx.concatenate(CGAffineTransform(a: 1, b: 0, c: slant, d: 1, tx: 0, ty: 0))
+    let width = 250.0, height = 300.0, stem = 82.0, bar = 60.0
+    ctx.setFillColor(ink)
+    ctx.fill(CGRect(x: -width / 2, y: -height / 2, width: stem, height: height))
+    ctx.fill(CGRect(x: width / 2 - stem, y: -height / 2, width: stem, height: height))
+    ctx.fill(CGRect(x: -width / 2 + stem - 1, y: -bar / 2, width: width - 2 * stem + 2, height: bar))
 
     NSGraphicsContext.restoreGraphicsState()
     return rep

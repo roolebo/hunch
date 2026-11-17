@@ -662,7 +662,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
         if settings.inDock {
             showInDock(true)
         }
-        item.button?.image = NSImage(systemSymbolName: "h.circle", accessibilityDescription: "Hunch")
+        item.button?.image = trayIcon()
         NSApp.mainMenu = mainMenu()
         let menu = NSMenu()
         menu.delegate = self
@@ -948,4 +948,24 @@ MainActor.assumeIsolated {
     let tray = Tray()
     NSApplication.shared.delegate = tray
     NSApplication.shared.run()
+}
+
+/// The app icon's slanted H in one color, as macOS tints menu bar icons,
+/// in icon.swift's proportions
+func trayIcon() -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+        let ctx = NSGraphicsContext.current!.cgContext
+        ctx.translateBy(x: rect.midX, y: rect.midY)
+        ctx.concatenate(CGAffineTransform(a: 1, b: 0, c: 0.14, d: 1, tx: 0, ty: 0))
+        // icon.swift's H is 300 points tall
+        let scale = 14.0 / 300
+        let width = 250 * scale, height = 300 * scale, stem = 82 * scale, bar = 60 * scale
+        ctx.fill(CGRect(x: -width / 2, y: -height / 2, width: stem, height: height))
+        ctx.fill(CGRect(x: width / 2 - stem, y: -height / 2, width: stem, height: height))
+        ctx.fill(CGRect(x: -width / 2, y: -bar / 2, width: width, height: bar))
+        return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = "Hunch"
+    return image
 }
