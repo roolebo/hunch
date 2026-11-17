@@ -2,8 +2,8 @@
 //! id nor name yet.
 
 use super::{Context, Display, Frame, Pointer, State, Window, Wm, Workspace};
-use crate::error::Result;
-use crate::macos::{self, CgDisplay, CgWindow, Point, Rect};
+use crate::error::{Error, Result, failed};
+use crate::macos::{self, AxElement, CgDisplay, CgWindow, Point, Rect};
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -49,6 +49,75 @@ tell application "iTerm2"
     return out
 end tell"#;
 
+/// iTerm2 takes keys only in its key window, which it lacks in the
+/// background, so posted keys vanish; its scripting writes to a session
+/// regardless.
+const ITERM_WRITE: &str = r#"
+on run argv
+    tell application "iTerm2"
+        tell current session of window id ((item 1 of argv) as integer)
+            write text (item 2 of argv) newline false
+        end tell
+    end tell
+end run"#;
+/// iTerm2's own paste brackets text this way. Without the brackets, a
+/// terminal agent takes the text for typing and a later Enter for a new
+/// line.
+const PASTE_START: &str = "\x1b[200~";
+const PASTE_END: &str = "\x1b[201~";
+/// write text's newline is a line feed, which a program in raw mode takes
+/// for a new line, not for Enter
+const ENTER: &str = "\r";
+
+fn iterm_write(window: u32, text: &str) -> Result<()> {
+    let output = Command::new("osascript")
+        .args(["-e", ITERM_WRITE, &window.to_string(), text])
+        .output()
+        .map_err(|e| failed(format!("can't run osascript: {e}")))?;
+    if !output.status.success() {
+        return Err(failed(format!(
+            "iTerm2 refused the text: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(())
+}
+
+fn find(window: &str) -> Result<CgWindow> {
+    macos::windows()
+        .into_iter()
+        .find(|w| w.id.to_string() == window)
+        .ok_or_else(|| Error::Gone(format!("no window {window}")))
+}
+
+/// Points the window's app at the window, posts keys, then gives the app
+/// back the window it typed into. An app that doesn't answer Accessibility
+/// gets the keys wherever it puts them.
+fn deliver(
+    window: &CgWindow,
+    post: impl FnOnce(i64) -> std::result::Result<(), String>,
+) -> Result<()> {
+    let app = AxElement::app(window.pid);
+    let previous = app.focused_window();
+    let target = app
+        .window_at(window.frame)
+        .filter(|t| previous.as_ref() != Some(t));
+    // AXMain and AXFocused order windows within the app only; the app
+    // stays in the background
+    let point = |w: &AxElement| {
+        w.set("AXMain", true);
+        w.set("AXFocused", true);
+    };
+    if let Some(target) = &target {
+        point(target);
+    }
+    let posted = post(window.pid).map_err(failed);
+    if let (Some(_), Some(previous)) = (&target, &previous) {
+        point(previous);
+    }
+    posted
+}
+
 fn iterm_ttys() -> HashMap<String, String> {
     let Ok(output) = Command::new("osascript").args(["-e", ITERM_TTYS]).output() else {
         return HashMap::new();
@@ -67,6 +136,12 @@ impl Macos {
             .into_iter()
             .find(is_app_window)
             .map(|w| w.id)
+    }
+
+    fn window_at(p: Point) -> Option<CgWindow> {
+        macos::windows_on_screen()
+            .into_iter()
+            .find(|w| is_app_window(w) && w.frame.contains(p))
     }
 }
 
@@ -93,10 +168,7 @@ impl Wm for Macos {
             x: p.x,
             y: p.y,
             display: display_at(&displays, p),
-            window: macos::windows_on_screen()
-                .into_iter()
-                .find(|w| is_app_window(w) && w.frame.contains(p))
-                .map(|w| w.id.to_string()),
+            window: Self::window_at(p).map(|w| w.id.to_string()),
         });
         Ok(Context {
             wm: "macos",
@@ -154,5 +226,31 @@ impl Wm for Macos {
                 }
             })
             .collect())
+    }
+
+    fn send(&self, window: &str, text: &str) -> Result<()> {
+        let window = find(window)?;
+        if window.app == ITERM {
+            return iterm_write(window.id, &format!("{PASTE_START}{text}{PASTE_END}"));
+        }
+        deliver(&window, |pid| macos::post_text(pid, text))
+    }
+
+    fn submit(&self, window: &str) -> Result<()> {
+        let window = find(window)?;
+        if window.app == ITERM {
+            return iterm_write(window.id, ENTER);
+        }
+        deliver(&window, macos::post_return)
+    }
+
+    fn pick(&self) -> Result<String> {
+        eprintln!("click the window to pick, or press Escape");
+        let click = macos::next_click()
+            .map_err(failed)?
+            .ok_or_else(|| Error::Cancelled("no window picked".into()))?;
+        Self::window_at(click)
+            .map(|w| w.id.to_string())
+            .ok_or_else(|| Error::Cancelled("no window there".into()))
     }
 }

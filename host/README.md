@@ -33,7 +33,7 @@ signed with a certificate:
 Window managers:
 
 - tmux, on any Unix: every command but pick
-- macOS: context, displays and windows
+- macOS: context, displays, windows, send, submit and pick
 
 Each role is a Cargo feature, all on by default; a build can leave out
 the ones a host doesn't need, e.g. `cargo build --no-default-features

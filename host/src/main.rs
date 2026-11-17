@@ -15,7 +15,7 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 Usage: hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
        hunch-host wms
-       hunch-host needs
+       hunch-host needs [--ask]
        hunch-host serve
 
 Roles:
@@ -23,14 +23,18 @@ Roles:
 
 hunch-host ROLE --help lists the commands of ROLE.
 wms prints the window managers not inside another one.
-needs prints what the human has yet to grant the service.
+needs prints what the human has yet to grant the service; --ask has the
+OS ask the human for it, where the OS can.
 serve runs the service, which every other command asks.";
 
 fn run(args: &[String]) -> Result<()> {
     match args {
         [flag] if flag == "-h" || flag == "--help" => println!("{USAGE}"),
         [command] if command == "wms" => println!("{}", serde_json::json!(wms())),
-        [command] if command == "needs" => println!("{}", serde_json::Value::from(needs())),
+        [command] if command == "needs" => println!("{}", serde_json::Value::from(needs(false))),
+        [command, flag] if command == "needs" && flag == "--ask" => {
+            println!("{}", serde_json::Value::from(needs(true)))
+        }
         #[cfg(unix)]
         [command] if command == "serve" => service::serve()?,
         #[cfg(feature = "wm")]
@@ -63,12 +67,24 @@ fn runs_here(args: &[String]) -> bool {
         || args.get(1).is_some_and(help)
 }
 
-fn needs() -> Vec<serde_json::Value> {
+#[allow(unused_variables)]
+fn needs(ask: bool) -> Vec<serde_json::Value> {
     #[allow(unused_mut)]
     let mut needs = Vec::new();
     #[cfg(all(feature = "wm", target_os = "macos"))]
-    if !macos::may_record_screen() {
-        needs.push(serde_json::json!({"for": "window titles", "grant": "Screen Recording"}));
+    {
+        if !macos::may_record_screen() {
+            if ask {
+                macos::ask_to_record_screen();
+            }
+            needs.push(serde_json::json!({"for": "window titles", "grant": "Screen Recording"}));
+        }
+        if !macos::may_post_events() {
+            if ask {
+                macos::ask_to_post_events();
+            }
+            needs.push(serde_json::json!({"for": "sending text, picking windows", "grant": "Accessibility"}));
+        }
     }
     needs
 }
