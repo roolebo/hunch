@@ -9,6 +9,10 @@ managers; its seat and compute come next.
 Window managers:
 
 - tmux, on any Unix: every command but pick
+- macOS: context, displays and windows
+
+On macOS, window titles need the Screen Recording permission for the app
+that runs hunch-host; without it they are empty.
 
 Each role is a Cargo feature, all on by default; a build can leave out
 the ones a host doesn't need, e.g. `cargo build --no-default-features

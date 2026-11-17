@@ -117,6 +117,10 @@ check_has() {
   FAILED=$((FAILED + 1))
 }
 
+macos() {
+  [ "$(uname)" == Darwin ]
+}
+
 test_help() {
   call --help
   check status "$STATUS" 0
@@ -127,6 +131,18 @@ test_help() {
   call frobnicate
   check status "$STATUS" 1
   check_has err "$ERR" "unknown role"
+}
+
+test_wms() {
+  # Only macOS has wms so far
+  macos || return 0
+  call wms
+  check status "$STATUS" 0
+  if macos; then
+    check wms "$OUT" '["macos:"]'
+  else
+    check wms "$OUT" '[]'
+  fi
 }
 
 test_tmux_windows() {
@@ -256,6 +272,15 @@ test_wm_usage() {
   wm state %0 sideways
   check status "$STATUS" 1
   check_has err "$ERR" "unknown STATE"
+}
+
+test_macos_displays() {
+  macos || return 0
+  call wm macos: displays
+  check status "$STATUS" 0
+  check main "$(jq '[.[] | select(.main)] | length' <<< "$OUT")" 1
+  check fields "$(jq -c '.[0] | keys' <<< "$OUT")" \
+    '["height","id","main","name","width","x","y"]'
 }
 
 run() {

@@ -1,5 +1,7 @@
 //! The window manager role; skills/hunch/WM.md specifies it.
 
+#[cfg(target_os = "macos")]
+mod macos;
 mod tmux;
 
 use crate::error::{Error, Result, failed};
@@ -226,6 +228,8 @@ fn open(addr: &str) -> Result<Box<dyn Wm>> {
         .ok_or_else(|| Error::Usage(format!("ADDR has no SCHEME: {addr}"), USAGE))?;
     match scheme {
         "tmux" => Ok(Box::new(tmux::Tmux::new(location))),
+        #[cfg(target_os = "macos")]
+        "macos" => Ok(Box::new(macos::Macos)),
         _ => Err(failed(format!("this build has no wm of SCHEME {scheme}"))),
     }
 }

@@ -2,6 +2,8 @@
 //! specifies it.
 
 mod error;
+#[cfg(all(feature = "wm", target_os = "macos"))]
+mod macos;
 #[cfg(feature = "wm")]
 mod wm;
 
@@ -10,15 +12,18 @@ use std::process::ExitCode;
 
 const USAGE: &str = "\
 Usage: hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
+       hunch-host wms
 
 Roles:
-  wm ADDR   a window manager, e.g. tmux:/tmp/tmux-1000/default
+  wm ADDR   a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
 
-hunch-host ROLE --help lists the commands of ROLE.";
+hunch-host ROLE --help lists the commands of ROLE.
+wms prints the window managers not inside another one.";
 
 fn run(args: &[String]) -> Result<()> {
     match args {
         [flag] if flag == "-h" || flag == "--help" => println!("{USAGE}"),
+        [command] if command == "wms" => println!("{}", serde_json::json!(wms())),
         #[cfg(feature = "wm")]
         [role, rest @ ..] if role == "wm" => wm::run(rest)?,
         [] => return Err(Error::Usage("missing ROLE".into(), USAGE)),
@@ -30,6 +35,14 @@ fn run(args: &[String]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn wms() -> Vec<&'static str> {
+    if cfg!(all(feature = "wm", target_os = "macos")) {
+        vec!["macos:"]
+    } else {
+        vec![]
+    }
 }
 
 fn main() -> ExitCode {
