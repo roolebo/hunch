@@ -281,7 +281,7 @@ struct KeyRow: View {
 
 struct SettingsView: View {
     enum Tab {
-        case general, permissions, dictation, hotkeys
+        case general, permissions, dictation, hotkeys, about
     }
 
     @ObservedObject var settings: Settings
@@ -293,6 +293,7 @@ struct SettingsView: View {
         case .permissions: permissions
         case .dictation: dictation
         case .hotkeys: hotkeys
+        case .about: about
         }
     }
 
@@ -381,6 +382,38 @@ struct SettingsView: View {
         }
     }
 
+    var about: some View {
+        page {
+            SwiftUI.Section {
+                HStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 48, height: 48)
+                    VStack(alignment: .leading) {
+                        Text("Hunch").font(.headline)
+                        Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            SwiftUI.Section("Ideas") {
+                credit("Vannevar Bush", "As We May Think, 1945", "https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/")
+                credit("J. C. R. Licklider", "Man-Computer Symbiosis, 1960", "https://groups.csail.mit.edu/medg/people/psz/Licklider.html")
+                credit("Douglas Engelbart", "Augmenting Human Intellect, 1962", "https://www.dougengelbart.org/")
+            }
+            SwiftUI.Section("Built on") {
+                credit("ggml", "Georgi Gerganov and its authors", "https://github.com/ggml-org/ggml")
+                credit("llama.cpp", "Its authors", "https://github.com/ggml-org/llama.cpp")
+                credit("transcribe.cpp", "Its authors", "https://github.com/handy-computer/transcribe.cpp")
+            }
+            SwiftUI.Section("Inspiration") {
+                credit("Pipit", "The first dictation app that got Hunch going", "https://www.pipitvoice.com")
+            }
+        }
+    }
+
+    func credit(_ name: String, _ work: String, _ url: String) -> some View {
+        LabeledContent(name) { Link(work, destination: URL(string: url)!) }
+    }
+
     /// The tabs, as macOS lays settings out: in the window's toolbar
     @MainActor
     static func tabs(_ settings: Settings) -> NSTabViewController {
@@ -393,6 +426,7 @@ struct SettingsView: View {
             ("Permissions", "lock.shield", .permissions),
             ("Dictation", "waveform", .dictation),
             ("Hotkeys", "keyboard", .hotkeys),
+            ("About", "info.circle", .about),
         ]
         for (title, symbol, tab) in pages {
             let host = NSHostingController(rootView: SettingsView(settings: settings, tab: tab))
