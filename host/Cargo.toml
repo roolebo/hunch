@@ -6,11 +6,19 @@ description = "Serves a host's roles to hunch: window managers, seat, compute"
 license = "MIT"
 
 [features]
-default = ["wm"]
+default = ["wm", "compute"]
 wm = []
+compute = ["dep:transcribe-cpp"]
 
 [dependencies]
 serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Metal on macOS; elsewhere the CPU until a host asks for more
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { version = "0.4.2", optional = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+transcribe-cpp = { version = "0.4.2", optional = true, default-features = false }

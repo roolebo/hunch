@@ -3,9 +3,9 @@
 # test/run: end-to-end tests of hunch-host, through its service.
 #
 # Each test gets its own HOME, XDG directories, service and tmux servers,
-# all under a temporary directory: the human's own service stays
-# untouched. A test that needs a client attached to tmux runs it in a
-# second tmux server, as a terminal.
+# all under a temporary directory: the human's own service and models
+# stay untouched. A test that needs a client attached to tmux runs it in
+# a second tmux server, as a terminal.
 #
 
 set -e
@@ -355,6 +355,114 @@ test_needs() {
   fi
 }
 
+# A GGUF file with no tensors and the string KEY=VALUE metadata given
+gguf() {
+  local file=$1
+  local pair
+  shift
+  mkdir -p "$(dirname "$file")"
+  {
+    printf 'GGUF'
+    le 4 3
+    le 8 0
+    le 8 $#
+    for pair in "$@"; do
+      string "${pair%%=*}"
+      le 4 8
+      string "${pair#*=}"
+    done
+  } > "$file"
+}
+
+# NUMBER in SIZE bytes, little-endian
+le() {
+  local i
+  for i in $(seq 0 $(($1 - 1))); do
+    printf "\\$(printf '%03o' $((($2 >> (8 * i)) & 255)))"
+  done
+}
+
+string() {
+  le 8 ${#1}
+  printf '%s' "$1"
+}
+
+# A WAV as compute takes it: 16-bit PCM, 16 kHz, mono; a second of silence
+wav() {
+  local samples=16000
+  printf 'RIFF'
+  le 4 $((36 + 2 * samples))
+  printf 'WAVEfmt '
+  le 4 16
+  le 2 1
+  le 2 1
+  le 4 16000
+  le 4 32000
+  le 2 2
+  le 2 16
+  printf 'data'
+  le 4 $((2 * samples))
+  head -c $((2 * samples)) /dev/zero
+}
+
+# A repo of the Hugging Face cache: REPO, then its files under
+# snapshots/, each with the metadata after it, up to the next file
+hub() {
+  local repo=$HF_HOME/hub/models--${1/\//--}
+  shift
+  mkdir -p "$repo/snapshots" "$repo/refs"
+  while [ $# -gt 0 ]; do
+    local file=$1
+    local metadata=()
+    shift
+    while [ $# -gt 0 ] && [[ $1 == *=* ]]; do
+      metadata+=("$1")
+      shift
+    done
+    gguf "$repo/snapshots/$file" "${metadata[@]}"
+  done
+}
+
+test_compute_models() {
+  hub org/speech main/speech-Q8_0.gguf stt.encoder=x general.name=Speech
+  echo main > "$HF_HOME/hub/models--org--speech/refs/main"
+  hub org/speech old/speech-old.gguf stt.encoder=x
+  # Pinned, as Handy fetches them: no refs/main
+  hub org/two rev/two-Q4_K.gguf stt.encoder=x rev/two-Q8_0.gguf stt.encoder=x
+  hub org/chat rev/chat-Q4_K.gguf general.name=Chat
+  gguf "$TEST_DIR/mine/pub/model/mine.gguf" stt.encoder=x
+  echo "$TEST_DIR/mine" > "$XDG_CONFIG_HOME/hunch/models"
+  call compute local: models
+  check status "$STATUS" 0
+  check ids "$(jq -r '.[].id' <<< "$OUT" | paste -sd' ' -)" \
+    "org/speech org/two:Q4_K org/two:Q8_0 pub/model/mine.gguf"
+  check speech "$(jq -cS '.[0] | del(.size)' <<< "$OUT")" \
+    '{"id":"org/speech","inputs":["audio/wav"],"loaded":false,"name":"Speech"}'
+  check size "$(jq '.[0].size' <<< "$OUT")" \
+    "$(wc -c < "$HF_HOME/hub/models--org--speech/snapshots/main/speech-Q8_0.gguf" | tr -d ' ')"
+}
+
+test_compute_run_errors() {
+  hub org/speech rev/speech.gguf stt.encoder=x
+  wav > "$IN"
+  call compute local: run org/none audio/wav
+  check status "$STATUS" 4
+  check_has err "$ERR" "no model org/none"
+  call compute local: run org/speech text/plain
+  check status "$STATUS" 4
+  check_has err "$ERR" "doesn't take text/plain"
+  call compute local: run org/speech audio/wav
+  check status "$STATUS" 1
+  check_has err "$ERR" "can't load org/speech"
+  echo hello > "$IN"
+  call compute local: run org/speech audio/wav
+  check status "$STATUS" 1
+  check_has err "$ERR" "isn't a WAV file"
+  call compute remote: models
+  check status "$STATUS" 1
+  check_has err "$ERR" "only local:"
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))
@@ -362,11 +470,14 @@ run() {
   TEST_DIR=$DIR/$N
   IN=$TEST_DIR/in
   TMUX_SOCKET=$TEST_DIR/tmux
-  mkdir -p "$TEST_DIR/home" "$TEST_DIR/run"
+  mkdir -p "$TEST_DIR/home" "$TEST_DIR/run" "$TEST_DIR/config/hunch" \
+    "$TEST_DIR/hf"
   : > "$IN"
   (
     export HOME=$TEST_DIR/home
     export XDG_RUNTIME_DIR=$TEST_DIR/run
+    export XDG_CONFIG_HOME=$TEST_DIR/config
+    export HF_HOME=$TEST_DIR/hf
     trap teardown EXIT
     serve
     "$1"

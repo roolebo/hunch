@@ -1,6 +1,8 @@
 //! hunch-host serves what a host has to hunch; skills/hunch/HOST.md
 //! specifies it.
 
+#[cfg(feature = "compute")]
+mod compute;
 mod error;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
@@ -19,7 +21,8 @@ Usage: hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
        hunch-host serve
 
 Roles:
-  wm ADDR   a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
+  wm ADDR       a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
+  compute ADDR  runs models, e.g. local:
 
 hunch-host ROLE --help lists the commands of ROLE.
 wms prints the window managers not inside another one.
@@ -39,6 +42,8 @@ fn run(args: &[String]) -> Result<()> {
         [command] if command == "serve" => service::serve()?,
         #[cfg(feature = "wm")]
         [role, rest @ ..] if role == "wm" => wm::run(rest)?,
+        #[cfg(feature = "compute")]
+        [role, rest @ ..] if role == "compute" => compute::run(rest)?,
         [] => return Err(Error::Usage("missing ROLE".into(), USAGE)),
         [role, ..] => {
             return Err(Error::Usage(
