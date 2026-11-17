@@ -112,6 +112,9 @@ Rules:
   off and every allow is empty.
 - The seat sends a device's data only to the hosts in its allow. compute
   fails if the mic's allow doesn't list COMPUTE's host.
+- A recording goes to COMPUTE's host over ssh, as `hunch-host compute`
+  takes it there; if the host doesn't answer, the dictation fails rather
+  than falling back to another compute.
 - While a mic or a camera records, the human sees it: by the device's
   own light where it has one, and always by the seat's own sign, the tray
   icon or the indicator of the phone's OS. The seat doesn't record from a
