@@ -112,6 +112,17 @@ struct SeatState: Decodable {
     let error: String?
 }
 
+/// The browser role as status prints it
+struct BrowserStatus: Decodable {
+    let browsers: [String]
+    let serves: String
+}
+
+/// A HOST as the human calls it
+func hostName(_ host: String) -> String {
+    host == "localhost" ? "This Mac" : host
+}
+
 struct Model: Decodable, Identifiable {
     let id: String
     let name: String?
@@ -896,6 +907,22 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
                 add(menu, "Redirect to Window…") { self.pickWindow() }
             } else {
                 add(menu, "Stop Redirect to \(describe(seat.target))") { _ = hunchHost(["seat", "target", "focus"]) }
+            }
+        }
+        if let browser = decode(BrowserStatus.self, ["browser", "status"]) {
+            menu.addItem(.separator())
+            header(menu, "Browser")
+            // What goes where, as for dictation
+            let pages = browser.browsers.isEmpty
+                ? add(menu, "No browser connected")
+                : add(menu, browser.browsers.joined(separator: ", ") + " · pages to " + hostName(browser.serves))
+            pages.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Browser")
+            if browser.browsers.isEmpty {
+                add(menu, "Install for Firefox") {
+                    if case .failure(let failure) = hunchHost(["browser", "install", "firefox"]) {
+                        self.showError(failure.message)
+                    }
+                }
             }
         }
         menu.addItem(.separator())
