@@ -47,7 +47,7 @@ const WARM_ALWAYS: &str = "315360000";
 const DEFAULT_KEY: &str = "right-command";
 /// How often a watch checks whether its client is gone
 const WATCH_CHECK: Duration = Duration::from_secs(1);
-/// How long the seat waits for Input Monitoring before it watches keys
+/// How long the seat waits for Accessibility before it watches keys
 const KEYS_RETRY: Duration = Duration::from_secs(5);
 
 /// What the seat keeps across restarts
@@ -223,7 +223,7 @@ pub fn start() {
         loop {
             // A tap made before the grant stays deaf after it
             if !macos::may_listen_to_keys() {
-                change(|s| s.error = Some("the dictation key needs Input Monitoring".into()));
+                change(|s| s.error = Some("the dictation key needs Accessibility".into()));
                 thread::sleep(KEYS_RETRY);
                 continue;
             }

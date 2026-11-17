@@ -355,7 +355,7 @@ test_needs() {
   check status "$STATUS" 0
   if macos; then
     check grants "$(jq -r '.[].grant' <<< "$OUT" | paste -sd, -)" \
-      "Screen Recording,Accessibility,Input Monitoring,Microphone"
+      "Screen Recording,Accessibility,Microphone"
     check fields "$(jq -c '.[0] | keys' <<< "$OUT")" '["for","grant","granted"]'
   else
     check grants "$OUT" '[]'

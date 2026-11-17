@@ -144,23 +144,17 @@ fn grants(ask: bool) -> Vec<Grant> {
         if ask && !events {
             macos::ask_to_post_events();
         }
+        // Accessibility lets the dictation key's tap listen too, so the
+        // human never needs to grant Input Monitoring
         grants.push(Grant {
-            what: "sending text, picking windows",
+            what: if cfg!(feature = "seat") {
+                "sending text, picking windows, the dictation key"
+            } else {
+                "sending text, picking windows"
+            },
             grant: "Accessibility",
             granted: events,
         });
-        #[cfg(feature = "seat")]
-        {
-            let keys = macos::may_listen_to_keys();
-            if ask && !keys {
-                macos::ask_to_listen_to_keys();
-            }
-            grants.push(Grant {
-                what: "the dictation key",
-                grant: "Input Monitoring",
-                granted: keys,
-            });
-        }
         // Only the app can ask for the microphone: the request answers
         // through a callback, which the service has no run loop for
         #[cfg(feature = "seat")]

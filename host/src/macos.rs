@@ -134,7 +134,6 @@ unsafe extern "C" {
     fn CGRequestScreenCaptureAccess() -> bool;
     fn CGRequestPostEventAccess() -> bool;
     fn CGPreflightListenEventAccess() -> bool;
-    fn CGRequestListenEventAccess() -> bool;
     fn CGEventCreateKeyboardEvent(source: CFTypeRef, key: u16, down: bool) -> CFTypeRef;
     fn CGEventKeyboardSetUnicodeString(event: CFTypeRef, length: c_ulong, text: *const u16);
     fn CGEventPostToPid(pid: i32, event: CFTypeRef);
@@ -333,15 +332,11 @@ pub fn ask_to_post_events() {
     unsafe { CGRequestPostEventAccess() };
 }
 
-/// Input Monitoring, which a tap that only listens needs
+/// Whether a tap that only listens hears keys: Accessibility or Input
+/// Monitoring lets it
 pub fn may_listen_to_keys() -> bool {
     // SAFETY: takes nothing, only reads the permission
     unsafe { CGPreflightListenEventAccess() }
-}
-
-pub fn ask_to_listen_to_keys() {
-    // SAFETY: takes nothing; macOS shows its own prompt
-    unsafe { CGRequestListenEventAccess() };
 }
 
 /// Accessibility, which posting keys to an app needs
@@ -688,7 +683,7 @@ pub fn watch_keys(on: impl FnMut(Key) + 'static) -> Result<(), String> {
     if tap.is_null() {
         // SAFETY: the tap that would use it was never made
         drop(unsafe { Box::from_raw(keys) });
-        return Err("can't watch the dictation key: hunch-host needs Input Monitoring".into());
+        return Err("can't watch the dictation key: hunch-host needs Accessibility".into());
     }
     // SAFETY: valid tap and run loop; both live as long as the process
     unsafe {
