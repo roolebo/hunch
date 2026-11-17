@@ -12,6 +12,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -33,7 +34,14 @@ pub fn socket() -> Result<PathBuf> {
     Ok(PathBuf::from(dir).join("hunch").join("host.sock"))
 }
 
-pub fn serve() -> Result<()> {
+/// A command the service answers in its own process, as one that keeps
+/// state must: its arguments, the client's stdout, and whether the client
+/// is gone
+pub type Here = fn(&[String], &mut File, &AtomicBool) -> Result<()>;
+
+/// here picks the commands the service answers itself; start runs once
+/// before the service takes clients
+pub fn serve(here: fn(&[String]) -> Option<Here>, start: fn()) -> Result<()> {
     let path = socket()?;
     let shown = path.display();
     let dir = path.parent().expect("the socket is inside hunch/");
@@ -50,11 +58,12 @@ pub fn serve() -> Result<()> {
     let listener =
         UnixListener::bind(&path).map_err(|e| failed(format!("can't listen at {shown}: {e}")))?;
     eprintln!("hunch-host: serving at {shown}");
+    start();
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 thread::spawn(move || {
-                    if let Err(e) = answer(stream) {
+                    if let Err(e) = answer(stream, here) {
                         eprintln!("hunch-host: {e}");
                     }
                 });
@@ -65,7 +74,7 @@ pub fn serve() -> Result<()> {
     Ok(())
 }
 
-fn answer(stream: UnixStream) -> Result<()> {
+fn answer(stream: UnixStream, here: fn(&[String]) -> Option<Here>) -> Result<()> {
     let fds = match receive_fds(&stream) {
         Ok(fds) => fds,
         // serve checks for a service this way, and sends nothing
@@ -84,6 +93,10 @@ fn answer(stream: UnixStream) -> Result<()> {
             "a client's arguments aren't a JSON array of strings: {e}"
         ))
     })?;
+
+    if let Some(command) = here(&args) {
+        return answer_here(stream, command, &args, stdout, stderr);
+    }
 
     let exe = std::env::current_exe().map_err(|e| failed(format!("can't find hunch-host: {e}")))?;
     let prompt_raw = prompt.as_raw_fd();
@@ -140,6 +153,41 @@ fn answer(stream: UnixStream) -> Result<()> {
     let code = status.code().map_or(1, |code| code as u8);
     match (&stream).write_all(&[code]) {
         // The client is gone and took its command along
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        written => written.map_err(|e| failed(format!("can't answer a client: {e}"))),
+    }
+}
+
+fn answer_here(
+    stream: UnixStream,
+    command: Here,
+    args: &[String],
+    stdout: OwnedFd,
+    stderr: OwnedFd,
+) -> Result<()> {
+    let gone = Arc::new(AtomicBool::new(false));
+    let watcher = {
+        let gone = Arc::clone(&gone);
+        let stream = stream
+            .try_clone()
+            .map_err(|e| failed(format!("can't watch a client: {e}")))?;
+        thread::spawn(move || {
+            let _ = (&stream).read(&mut [0]);
+            gone.store(true, Ordering::Relaxed);
+        })
+    };
+    let mut out = File::from(stdout);
+    let code = match command(&args[1..], &mut out, &gone) {
+        Ok(()) => 0,
+        Err(e) => {
+            let _ = writeln!(File::from(stderr), "hunch-host: {e}");
+            e.status()
+        }
+    };
+    drop(out);
+    let _ = stream.shutdown(std::net::Shutdown::Read);
+    let _ = watcher.join();
+    match (&stream).write_all(&[code]) {
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
         written => written.map_err(|e| failed(format!("can't answer a client: {e}"))),
     }

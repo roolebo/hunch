@@ -3,9 +3,9 @@
 # test/run: end-to-end tests of hunch-host, through its service.
 #
 # Each test gets its own HOME, XDG directories, service and tmux servers,
-# all under a temporary directory: the human's own service and models
-# stay untouched. A test that needs a client attached to tmux runs it in
-# a second tmux server, as a terminal.
+# all under a temporary directory: the human's own service, models and
+# settings stay untouched. A test that needs a client attached to tmux
+# runs it in a second tmux server, as a terminal.
 #
 
 set -e
@@ -346,13 +346,18 @@ none() {
 }
 
 test_needs() {
-  call needs
+  call needs --all
   check status "$STATUS" 0
   if macos; then
-    check fields "$(jq -c '[.[] | keys] | unique - [["for","grant"]]' <<< "$OUT")" '[]'
+    check grants "$(jq -r '.[].grant' <<< "$OUT" | paste -sd, -)" \
+      "Screen Recording,Accessibility,Input Monitoring,Microphone"
+    check fields "$(jq -c '.[0] | keys' <<< "$OUT")" '["for","grant","granted"]'
   else
-    check needs "$OUT" '[]'
+    check grants "$OUT" '[]'
   fi
+  call needs --now
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown flag: --now"
 }
 
 # A GGUF file with no tensors and the string KEY=VALUE metadata given
@@ -463,6 +468,60 @@ test_compute_run_errors() {
   check_has err "$ERR" "only local:"
 }
 
+seat() {
+  call seat "$@"
+}
+
+test_seat_context() {
+  macos || return 0
+  seat context
+  check status "$STATUS" 0
+  check fields "$(jq -c 'keys' <<< "$OUT")" \
+    '["compute","error","idle","key","locked","model","recording","submit","target","transcribing","wm"]'
+  check defaults "$(jq -c '{key, model, target, submit}' <<< "$OUT")" \
+    '{"key":"right-command","model":null,"target":"focus","submit":true}'
+}
+
+test_seat_settings_stay() {
+  macos || return 0
+  hub org/speech rev/speech.gguf stt.encoder=x
+  seat key right-option
+  check status "$STATUS" 0
+  seat submit off
+  seat target localhost tmux:/tmp/x %1
+  seat model org/speech
+  check status "$STATUS" 0
+  stop
+  serve
+  seat context
+  check settings "$(jq -c '{key, model, target, submit}' <<< "$OUT")" \
+    '{"key":"right-option","model":"org/speech","target":"localhost tmux:/tmp/x %1","submit":false}'
+}
+
+test_seat_errors() {
+  macos || return 0
+  seat key caps-lock
+  check status "$STATUS" 1
+  check_has err "$ERR" "KEY is one of right-command"
+  seat model org/none
+  check status "$STATUS" 4
+  seat submit maybe
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown command"
+  seat compute elsewhere local:
+  check status "$STATUS" 1
+}
+
+test_seat_watch() {
+  macos || return 0
+  "$HOST" seat watch > "$TEST_DIR/watch" &
+  wait_for [ -s "$TEST_DIR/watch" ] || true
+  seat submit off
+  wait_for [ "$(wc -l < "$TEST_DIR/watch")" -ge 2 ] || true
+  kill $!
+  check lines "$(jq -c .submit "$TEST_DIR/watch" | paste -sd' ' -)" "true false"
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))
@@ -471,12 +530,13 @@ run() {
   IN=$TEST_DIR/in
   TMUX_SOCKET=$TEST_DIR/tmux
   mkdir -p "$TEST_DIR/home" "$TEST_DIR/run" "$TEST_DIR/config/hunch" \
-    "$TEST_DIR/hf"
+    "$TEST_DIR/state" "$TEST_DIR/hf"
   : > "$IN"
   (
     export HOME=$TEST_DIR/home
     export XDG_RUNTIME_DIR=$TEST_DIR/run
     export XDG_CONFIG_HOME=$TEST_DIR/config
+    export XDG_STATE_HOME=$TEST_DIR/state
     export HF_HOME=$TEST_DIR/hf
     trap teardown EXIT
     serve

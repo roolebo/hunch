@@ -1,11 +1,13 @@
 # hunch-host
 
 Serves what a host has to hunch, as the protocols in
-[skills/hunch](../skills/hunch) specify: so far the host's window
-managers; its seat and compute come next.
+[skills/hunch](../skills/hunch) specify: the host's window managers,
+its compute and its seat.
 
     hunch-host serve
     hunch-host wm ADDR COMMAND [ARGUMENTS]
+    hunch-host compute ADDR COMMAND [ARGUMENTS]
+    hunch-host seat COMMAND [ARGUMENTS]
 
 Every command but serve asks the service, which runs it on the caller's
 stdin, stdout and stderr, so the service has to run first.

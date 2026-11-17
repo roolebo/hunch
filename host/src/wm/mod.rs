@@ -222,7 +222,7 @@ pub trait Wm {
     }
 }
 
-fn open(addr: &str) -> Result<Box<dyn Wm>> {
+pub fn open(addr: &str) -> Result<Box<dyn Wm>> {
     let (scheme, location) = addr
         .split_once(':')
         .ok_or_else(|| Error::Usage(format!("ADDR has no SCHEME: {addr}"), USAGE))?;

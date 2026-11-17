@@ -6,9 +6,10 @@ description = "Serves a host's roles to hunch: window managers, seat, compute"
 license = "MIT"
 
 [features]
-default = ["wm", "compute"]
+default = ["wm", "compute", "seat"]
 wm = []
 compute = ["dep:transcribe-cpp"]
+seat = ["wm", "compute", "dep:cpal"]
 
 [dependencies]
 serde_json = "1"
@@ -16,8 +17,11 @@ serde_json = "1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Metal on macOS; elsewhere the CPU until a host asks for more
 [target.'cfg(target_os = "macos")'.dependencies]
+# The seat records only on macOS so far; elsewhere cpal would pull in
+# ALSA for nothing
+cpal = { version = "0.18", optional = true }
+# Metal on macOS; elsewhere the CPU until a host asks for more
 transcribe-cpp = { version = "0.4.2", optional = true }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]

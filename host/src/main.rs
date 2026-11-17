@@ -6,6 +6,8 @@ mod compute;
 mod error;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
+#[cfg(all(feature = "seat", target_os = "macos"))]
+mod seat;
 #[cfg(unix)]
 mod service;
 #[cfg(feature = "wm")]
@@ -17,29 +19,38 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 Usage: hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
        hunch-host wms
-       hunch-host needs [--ask]
+       hunch-host needs [--ask] [--all]
        hunch-host serve
 
 Roles:
   wm ADDR       a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
   compute ADDR  runs models, e.g. local:
+  seat          where the human sits: dictation
 
 hunch-host ROLE --help lists the commands of ROLE.
 wms prints the window managers not inside another one.
 needs prints what the human has yet to grant the service; --ask has the
-OS ask the human for it, where the OS can.
+OS ask the human for it, where the OS can; --all lists every grant, each
+with whether it's granted.
 serve runs the service, which every other command asks.";
 
 fn run(args: &[String]) -> Result<()> {
     match args {
         [flag] if flag == "-h" || flag == "--help" => println!("{USAGE}"),
         [command] if command == "wms" => println!("{}", serde_json::json!(wms())),
-        [command] if command == "needs" => println!("{}", serde_json::Value::from(needs(false))),
-        [command, flag] if command == "needs" && flag == "--ask" => {
-            println!("{}", serde_json::Value::from(needs(true)))
-        }
+        [command, flags @ ..] if command == "needs" => needs(flags)?,
         #[cfg(unix)]
-        [command] if command == "serve" => service::serve()?,
+        [command] if command == "serve" => service::serve(here, start)?,
+        #[cfg(all(feature = "seat", target_os = "macos"))]
+        [role, flag] if role == "seat" && (flag == "-h" || flag == "--help") => {
+            println!("{}", seat::USAGE)
+        }
+        #[cfg(all(feature = "seat", target_os = "macos"))]
+        [role, ..] if role == "seat" => {
+            return Err(Error::Failed(
+                "the seat lives in the service: run it with hunch-host serve".into(),
+            ));
+        }
         #[cfg(feature = "wm")]
         [role, rest @ ..] if role == "wm" => wm::run(rest)?,
         #[cfg(feature = "compute")]
@@ -53,6 +64,23 @@ fn run(args: &[String]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The commands the service answers in its own process
+#[cfg(unix)]
+fn here(args: &[String]) -> Option<service::Here> {
+    match args.first().map(String::as_str) {
+        #[cfg(all(feature = "seat", target_os = "macos"))]
+        Some("seat") if args.get(1).is_none_or(|a| a != "-h" && a != "--help") => Some(seat::run),
+        _ => None,
+    }
+}
+
+/// What the service starts before it takes clients
+#[cfg(unix)]
+fn start() {
+    #[cfg(all(feature = "seat", target_os = "macos"))]
+    seat::start();
 }
 
 fn wms() -> Vec<&'static str> {
@@ -72,26 +100,81 @@ fn runs_here(args: &[String]) -> bool {
         || args.get(1).is_some_and(help)
 }
 
+/// A grant the service uses
+struct Grant {
+    what: &'static str,
+    grant: &'static str,
+    granted: bool,
+}
+
+/// The grants this build uses on this host
 #[allow(unused_variables)]
-fn needs(ask: bool) -> Vec<serde_json::Value> {
+fn grants(ask: bool) -> Vec<Grant> {
     #[allow(unused_mut)]
-    let mut needs = Vec::new();
+    let mut grants = Vec::new();
     #[cfg(all(feature = "wm", target_os = "macos"))]
     {
-        if !macos::may_record_screen() {
-            if ask {
-                macos::ask_to_record_screen();
-            }
-            needs.push(serde_json::json!({"for": "window titles", "grant": "Screen Recording"}));
+        let screen = macos::may_record_screen();
+        if ask && !screen {
+            macos::ask_to_record_screen();
         }
-        if !macos::may_post_events() {
-            if ask {
-                macos::ask_to_post_events();
-            }
-            needs.push(serde_json::json!({"for": "sending text, picking windows", "grant": "Accessibility"}));
+        grants.push(Grant {
+            what: "window titles",
+            grant: "Screen Recording",
+            granted: screen,
+        });
+        let events = macos::may_post_events();
+        if ask && !events {
+            macos::ask_to_post_events();
         }
+        grants.push(Grant {
+            what: "sending text, picking windows",
+            grant: "Accessibility",
+            granted: events,
+        });
+        #[cfg(feature = "seat")]
+        {
+            let keys = macos::may_listen_to_keys();
+            if ask && !keys {
+                macos::ask_to_listen_to_keys();
+            }
+            grants.push(Grant {
+                what: "the dictation key",
+                grant: "Input Monitoring",
+                granted: keys,
+            });
+        }
+        // Only the app can ask for the microphone: the request answers
+        // through a callback, which the service has no run loop for
+        #[cfg(feature = "seat")]
+        grants.push(Grant {
+            what: "dictation",
+            grant: "Microphone",
+            granted: macos::may_record_audio(),
+        });
     }
-    needs
+    grants
+}
+
+fn needs(flags: &[String]) -> Result<()> {
+    let ask = flags.iter().any(|f| f == "--ask");
+    let all = flags.iter().any(|f| f == "--all");
+    if let Some(flag) = flags.iter().find(|f| *f != "--ask" && *f != "--all") {
+        return Err(Error::Usage(format!("unknown flag: {flag}"), USAGE));
+    }
+    let listed: Vec<serde_json::Value> = grants(ask)
+        .into_iter()
+        .filter(|g| all || !g.granted)
+        .map(|g| {
+            let mut need = serde_json::json!({"for": g.what, "grant": g.grant});
+            if all {
+                need["granted"] = g.granted.into();
+            }
+            need
+        })
+        .collect();
+    println!("{}", serde_json::Value::from(listed));
+    Ok(())
 }
 
 fn main() -> ExitCode {
