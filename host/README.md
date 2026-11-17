@@ -12,7 +12,8 @@ its compute and its seat.
 Every command but serve asks the service, which runs it on the caller's
 stdin, stdout and stderr, so the service has to run first.
 
-To run the service at login, on macOS:
+On macOS, the Hunch app in [macos](../macos) runs the service and starts
+it at login. To run it at login without the app, on macOS:
 
     cargo install --path .
     sed "s|@HUNCH_HOST@|$(command -v hunch-host)|; s|@HOME@|$HOME|" \
