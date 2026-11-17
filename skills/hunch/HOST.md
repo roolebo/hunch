@@ -38,11 +38,25 @@ Terms:
     HOST        a host, by the name ssh reaches it at, e.g. thinkstation;
                 localhost for the host that asks
 
+## Links
+
+A seat's service keeps a link to each host its data may go to, the hosts
+in its allows (see SEAT.md):
+
+    ssh HOST hunch-host link
+
+The link goes out from the seat, as the human's ssh does, so no host has
+to reach a seat. It carries the seat's presence, and the commands of the
+seat's browser while that serves HOST.
+
 Commands of the host itself:
 
     hunch-host wms      the ADDR of each wm not inside another one:
                         graphical desktops and text consoles, as a JSON
                         array
+    hunch-host seats    the seats linked to this host and its own, as a
+                        JSON array of objects: host, locked, idle (see
+                        SEAT.md)
     hunch-host needs [--ask] [--all]
                         what the human has yet to grant the service, as a
                         JSON array; --ask has the OS ask the human for it,
@@ -84,11 +98,9 @@ another:
     hunch-host browser status       the browsers connected and the HOST
                                     served, as JSON
 
-To serve another host, the seat's service keeps `ssh HOST hunch-host
-browser relay` running, and HOST's service passes its agents' commands
-through it: the connection goes out from the seat, as the human's ssh
-does. serve fails for a HOST not in the browser's allow, which only the
-human sets, as for a mic (see SEAT.md).
+HOST's service passes its agents' commands to the browser through the
+seat's link (see Links). serve fails for a HOST not in the browser's
+allow, which only the human sets, as for a mic (see SEAT.md).
 
 status JSON:
 

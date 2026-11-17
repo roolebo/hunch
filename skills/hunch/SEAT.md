@@ -17,8 +17,9 @@ hunch-host serves the seat of its host (see HOST.md):
 
 Terms:
 
-    IDLE        seconds since the human last used the seat's keyboard or
-                pointer
+    IDLE        seconds since the human last showed they're at the seat:
+                used its keyboard or pointer, or moved where the seat
+                can see
     DEVICE      a device, by an id the seat gives it; its kind is one of
                 keyboard, pointer, mic, camera (input) or display, speaker
                 (output); more kinds may come, and a client skips a kind
@@ -140,9 +141,10 @@ Exit status:
 
 `hunch focus` walks from the seat down to the window the human types into:
 
-1. The seat: of the hosts listed, the one whose seat is unlocked with the
-   least IDLE. If its path (below) goes through another listed host, as
-   with a remote desktop, the human sits at the outer one.
+1. The seat: of `hunch-host seats`, the one unlocked with the least
+   IDLE; seats tell their hosts through their links (see HOST.md). If its
+   path (below) goes through another seat's host, as with a remote
+   desktop, the human sits at the outer one.
 2. Its wm's `context` gives the focused window.
 3. Inside the window:
    - a viewer of another host: that host's graphical desktop (see
