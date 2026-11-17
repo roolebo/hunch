@@ -540,6 +540,9 @@ test_seat_errors() {
   check_has err "$ERR" "unknown command"
   seat compute elsewhere local:
   check status "$STATUS" 1
+  seat last
+  check status "$STATUS" 1
+  check_has err "$ERR" "nothing dictated"
 }
 
 test_seat_watch() {

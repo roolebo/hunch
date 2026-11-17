@@ -22,6 +22,7 @@ Usage: hunch-host seat COMMAND [ARGUMENTS]
 
 Commands:
   context               The seat's state, as JSON
+  last                  The last transcription, kept in memory only
   watch                 The state again each time it changes, a line each
   model MODEL           Transcribe with MODEL
   target TARGET         Send dictation to TARGET
@@ -69,6 +70,8 @@ struct State {
     transcribing: bool,
     /// The model is loading, at start or for a dictation
     loading: bool,
+    /// The last transcription, in memory only, for the human to copy
+    last: Option<String>,
     error: Option<String>,
     /// Counts changes, so a watch sees each
     version: u64,
@@ -135,6 +138,7 @@ fn seat() -> &'static Seat {
             recording: None,
             transcribing: false,
             loading: false,
+            last: None,
             error: None,
             version: 0,
         }),
@@ -309,6 +313,8 @@ fn dictate(recording: audio::Recording, settings: &Settings) -> Result<()> {
         eprintln!("hunch-host: dictation heard no words");
         return Ok(());
     }
+    // Kept even if it doesn't arrive: that's when the human needs it
+    change(|s| s.last = Some(text.clone()));
     // How much and where, never what: the log isn't for the human's words
     eprintln!(
         "hunch-host: dictation sends {} characters to {}",
@@ -424,6 +430,10 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
     let said = match args.as_slice() {
         ["-h" | "--help", ..] => USAGE.to_string(),
         ["context"] => context(&lock()).to_string(),
+        ["last"] => lock()
+            .last
+            .clone()
+            .ok_or_else(|| failed("nothing dictated since the service started"))?,
         ["watch"] => return watch(out, gone),
         ["model", model] => {
             compute::find(model)?;
