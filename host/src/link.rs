@@ -49,16 +49,16 @@ fn hostname() -> String {
 
 /// IDLE of this host's seat, where it can tell
 pub fn idle() -> Option<f64> {
-    #[cfg(all(feature = "seat", target_os = "macos"))]
-    return Some(crate::macos::idle());
-    #[cfg(not(all(feature = "seat", target_os = "macos")))]
+    #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
+    return Some(crate::seat::idle());
+    #[cfg(not(all(feature = "seat", any(target_os = "macos", target_os = "linux"))))]
     None
 }
 
 fn locked() -> Option<bool> {
-    #[cfg(all(feature = "seat", target_os = "macos"))]
-    return Some(crate::macos::locked());
-    #[cfg(not(all(feature = "seat", target_os = "macos")))]
+    #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
+    return Some(crate::seat::locked());
+    #[cfg(not(all(feature = "seat", any(target_os = "macos", target_os = "linux"))))]
     None
 }
 

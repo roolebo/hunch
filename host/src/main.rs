@@ -17,7 +17,7 @@ mod macos;
     any(feature = "browser", all(feature = "wm", target_os = "linux"))
 ))]
 mod peer;
-#[cfg(all(feature = "seat", target_os = "macos"))]
+#[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
 mod seat;
 #[cfg(unix)]
 mod service;
@@ -59,11 +59,11 @@ fn run(args: &[String]) -> Result<()> {
         [command, flags @ ..] if command == "needs" => needs(flags)?,
         #[cfg(unix)]
         [command] if command == "serve" => service::serve(here, start)?,
-        #[cfg(all(feature = "seat", target_os = "macos"))]
+        #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
         [role, flag] if role == "seat" && (flag == "-h" || flag == "--help") => {
             println!("{}", seat::USAGE)
         }
-        #[cfg(all(feature = "seat", target_os = "macos"))]
+        #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
         [role, ..] if role == "seat" => {
             return Err(Error::Failed(
                 "the seat lives in the service: run it with hunch-host serve".into(),
@@ -98,7 +98,7 @@ fn run(args: &[String]) -> Result<()> {
 #[cfg(unix)]
 fn here(args: &[String]) -> Option<service::Here> {
     match args.first().map(String::as_str) {
-        #[cfg(all(feature = "seat", target_os = "macos"))]
+        #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
         Some("seat") if args.get(1).is_none_or(|a| a != "-h" && a != "--help") => Some(seat::run),
         // In the service, which holds the extensions' connections
         #[cfg(feature = "browser")]
@@ -127,7 +127,7 @@ fn here(args: &[String]) -> Option<service::Here> {
 /// What the service starts before it takes clients
 #[cfg(unix)]
 fn start() {
-    #[cfg(all(feature = "seat", target_os = "macos"))]
+    #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
     seat::start();
     #[cfg(feature = "browser")]
     link::start();
@@ -160,8 +160,8 @@ struct Grant {
     granted: bool,
 }
 
-/// The grants this build uses on this host
-#[allow(unused_variables)]
+/// The grants this build uses on this host, which depend on its OS
+#[allow(unused_variables, clippy::vec_init_then_push)]
 fn grants(ask: bool) -> Vec<Grant> {
     #[allow(unused_mut)]
     let mut grants = Vec::new();
@@ -200,6 +200,13 @@ fn grants(ask: bool) -> Vec<Grant> {
             granted: macos::may_record_audio(),
         });
     }
+    // The keys come from evdev, under any desktop
+    #[cfg(all(feature = "seat", target_os = "linux"))]
+    grants.push(Grant {
+        what: "the dictation key",
+        grant: "group input",
+        granted: seat::may_listen_to_keys(),
+    });
     grants
 }
 

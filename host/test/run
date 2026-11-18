@@ -363,7 +363,7 @@ test_needs() {
       "Screen Recording,Accessibility,Microphone"
     check fields "$(jq -c '.[0] | keys' <<< "$OUT")" '["for","grant","granted"]'
   else
-    check grants "$OUT" '[]'
+    check grants "$(jq -r '.[].grant' <<< "$OUT" | paste -sd, -)" "group input"
   fi
   call needs --now
   check status "$STATUS" 1
@@ -719,23 +719,18 @@ not_serving() {
 }
 
 test_link_seats() {
-  local own=0
-  macos && own=1
   host thinkstation
   allow_browser thinkstation
-  wait_for linked thinkstation $((own + 1)) || die "The seat didn't link"
+  # thinkstation's own seat, and the one linked to it
+  wait_for linked thinkstation 2 || die "The seat didn't link"
   call seats
-  check here "$(jq length <<< "$OUT")" $own
+  check here "$(jq length <<< "$OUT")" 1
   on thinkstation hunch-host seats > "$TEST_DIR/out"
   check host "$(jq -r '.[-1].host' "$TEST_DIR/out")" "$(hostname -s)"
-  if macos; then
-    check locked "$(jq -r '.[-1].locked | type' "$TEST_DIR/out")" boolean
-    check idle "$(jq -r '.[-1].idle | type' "$TEST_DIR/out")" number
-  else
-    check unknown "$(jq -c '.[-1] | [.locked, .idle]' "$TEST_DIR/out")" '[null,null]'
-  fi
+  check locked "$(jq -r '.[-1].locked | type' "$TEST_DIR/out")" boolean
+  check idle "$(jq -r '.[-1].idle | type' "$TEST_DIR/out")" number
   allow_browser
-  wait_for linked thinkstation $own || die "The seat didn't unlink"
+  wait_for linked thinkstation 1 || die "The seat didn't unlink"
 }
 
 test_link_broken() {

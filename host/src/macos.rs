@@ -574,6 +574,10 @@ pub fn may_record_audio() -> bool {
     }
 }
 
+pub const KEYS_NEED: &str = "the dictation key needs Accessibility";
+/// Why a microphone may send only silence
+pub const MIC_SILENT: &str = "check Microphone in System Settings";
+
 /// A key the dictation listens for
 pub enum Key {
     /// A modifier key changed: its keycode, the flags it left, and the pid

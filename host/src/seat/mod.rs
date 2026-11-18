@@ -1,14 +1,21 @@
-//! The seat role, as skills/hunch/SEAT.md specifies it, on macOS so far.
+//! The seat role, as skills/hunch/SEAT.md specifies it, on macOS and on
+//! Linux; platform has each one's keys and presence.
 //! It lives in the service, which holds the dictation key, the recording
 //! and the loaded model, since they outlive any one command.
 
 mod audio;
+#[cfg(target_os = "linux")]
+mod linux;
 
 #[cfg(feature = "compute")]
 use crate::compute;
 use crate::error::{Error, Result, failed};
-use crate::macos::{self, Key};
+#[cfg(target_os = "macos")]
+use crate::macos as platform;
 use crate::{config, wav, wm};
+#[cfg(target_os = "linux")]
+use linux as platform;
+use platform::Key;
 use serde_json::{Value, json};
 use std::fs::File;
 use std::io::Write;
@@ -39,7 +46,11 @@ Commands:
 
 TARGET is focus, or HOST ADDR WINDOW. Escape cancels a dictation.";
 
+#[cfg(target_os = "macos")]
 const WM: &str = "macos:";
+// The Shell extension serves it (see HOST.md)
+#[cfg(target_os = "linux")]
+const WM: &str = "gnome:";
 const FOCUS: &str = "focus";
 const LOCALHOST: &str = "localhost";
 const LOCAL: &str = "local:";
@@ -177,8 +188,8 @@ fn change(apply: impl FnOnce(&mut State)) {
 
 fn context(state: &State) -> Value {
     json!({
-        "idle": macos::idle(),
-        "locked": macos::locked(),
+        "idle": platform::idle(),
+        "locked": platform::locked(),
         "wm": WM,
         "recording": state.recording.is_some(),
         "opening": state.opening,
@@ -326,14 +337,14 @@ pub fn start() {
     thread::spawn(move || {
         loop {
             // A tap made before the grant stays deaf after it
-            if !macos::may_listen_to_keys() {
-                change(|s| s.error = Some("the dictation key needs Accessibility".into()));
+            if !platform::may_listen_to_keys() {
+                change(|s| s.error = Some(platform::KEYS_NEED.into()));
                 thread::sleep(KEYS_RETRY);
                 continue;
             }
             change(|s| s.error = None);
             let keys = keys.clone();
-            if let Err(e) = macos::watch_keys(move |key| {
+            if let Err(e) = platform::watch_keys(move |key| {
                 let _ = keys.send(key);
             }) {
                 change(|s| s.error = Some(e));
@@ -343,8 +354,23 @@ pub fn start() {
     });
 }
 
-fn dictation_key(name: &str) -> Option<&'static macos::DictationKey> {
-    macos::DICTATION_KEYS.iter().find(|k| k.name == name)
+fn dictation_key(name: &str) -> Option<&'static platform::DictationKey> {
+    platform::DICTATION_KEYS.iter().find(|k| k.name == name)
+}
+
+/// IDLE, for the seat's link
+pub fn idle() -> f64 {
+    platform::idle()
+}
+
+pub fn locked() -> bool {
+    platform::locked()
+}
+
+/// For needs: macOS's Accessibility needs asks on its own
+#[cfg(target_os = "linux")]
+pub fn may_listen_to_keys() -> bool {
+    platform::may_listen_to_keys()
 }
 
 fn on_key(key: Key) {
@@ -464,9 +490,10 @@ fn dictate(recording: audio::Recording, settings: &Settings, send: bool) -> Resu
         ));
     }
     if pcm.iter().all(|&s| s == 0.0) {
-        return Err(failed(
-            "the microphone sent nothing but silence: check Microphone in System Settings",
-        ));
+        return Err(failed(format!(
+            "the microphone sent nothing but silence: {}",
+            platform::MIC_SILENT
+        )));
     }
     let model = settings.model.as_deref().expect("press checks for a model");
     let text = transcribe(&settings.compute, model, &pcm)?;
@@ -625,7 +652,7 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
         }
         ["key", key] => {
             if dictation_key(key).is_none() {
-                let keys: Vec<&str> = macos::DICTATION_KEYS.iter().map(|k| k.name).collect();
+                let keys: Vec<&str> = platform::DICTATION_KEYS.iter().map(|k| k.name).collect();
                 return Err(failed(format!(
                     "KEY is one of {}, not {key}",
                     keys.join(", ")
