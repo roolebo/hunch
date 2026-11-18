@@ -38,6 +38,8 @@ Window managers:
 
 - tmux, on any Unix: every command but pick
 - macOS: context, displays, windows, send, submit and pick
+- GNOME, through the Shell extension in [gnome](../gnome): context,
+  displays, windows, focus, and send and submit to the window in focus
 
 A browser's extension reaches the service by native messaging, as the
 host `hunch`: the browser starts `hunch-host-native`, a link to
