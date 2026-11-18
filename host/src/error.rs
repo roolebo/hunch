@@ -12,6 +12,7 @@ pub enum Error {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Cancelled(String),
     /// A MODEL is unknown, or doesn't take the TYPE asked for
+    #[cfg_attr(not(feature = "compute"), allow(dead_code))]
     Unknown(String),
 }
 
