@@ -14,7 +14,7 @@ A wm isn't registered. hunch-host on its host serves it (see HOST.md):
 Terms:
 
     ADDR        a wm, as SCHEME:LOCATION; SCHEME says what kind it is,
-                e.g. macos:, x11::0,
+                e.g. macos:, gnome:, x11::0,
                 sway:/run/user/1000/sway-ipc.1000.1234.sock,
                 tmux:/tmp/tmux-1000/default,
                 screen:/run/screen/S-roolebo/1234.pts-0.thinkstation,
@@ -107,6 +107,8 @@ Rules:
 - A tiling wm places a window as near as its layout allows; windows shows
   where it went.
 - Only pick asks the human anything.
+- GNOME types only into the window in focus, so send and submit to
+  another window fail there.
 - A tty has no send or submit: only root can type into a tty that isn't
   its own. With one window, it has no swap, move, place or state either.
 

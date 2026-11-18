@@ -132,3 +132,26 @@ status JSON:
 ```json
 {"browsers": ["Firefox", "Safari"], "serves": "thinkstation", "allow": ["thinkstation"]}
 ```
+
+## GNOME
+
+GNOME Shell lets only itself see and type into the windows of its
+desktop, so hunch's Shell extension serves that desktop as the wm
+`gnome:`. It connects to the service by running:
+
+    hunch-host wm gnome: connect
+
+and answers on that command's stdin and stdout, a JSON message per
+line, as a link does (see Links):
+
+- the service sends a command of WM.md, its TEXT in `input`:
+  `{"id": 3, "command": "send", "args": ["1234"], "input": "hello"}`
+- the service sends `presence` for the seat: the result is
+  `{"idle": 3.2, "locked": false}`
+- the extension answers with the command's id: `{"id": 3, "result":
+  ...}`, or `{"id": 3, "error": "...", "status": 4}` with an exit
+  status of WM.md
+
+The extension is also the seat's tray, in the top bar: it shows what
+`hunch-host seat watch` prints and runs the commands the human picks.
+
