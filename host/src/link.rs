@@ -1,6 +1,8 @@
 //! Links, as skills/hunch/HOST.md specifies them: a seat keeps one to each
-//! host in its allows, and tells it where the human is.
+//! host in its allows, and tells it where the human is and passes the
+//! browser's commands on it.
 
+use crate::browser::{self, Peer, Wire};
 use crate::config;
 use crate::error::{Error, Result, failed};
 use serde_json::{Value, json};
@@ -21,6 +23,7 @@ const RETRY: Duration = Duration::from_secs(5);
 
 /// A seat linked to this host
 struct Linked {
+    peer: Arc<Peer>,
     /// What the seat said last, and when
     said: Mutex<(Value, Instant)>,
 }
@@ -73,8 +76,24 @@ fn now(linked: &Linked) -> Value {
     seat
 }
 
+/// The linked seats whose browsers serve this host, each with its IDLE,
+/// INFINITY where it can't tell
+pub fn serving() -> Vec<(f64, Arc<Peer>)> {
+    linked()
+        .iter()
+        .filter(|l| {
+            let said = &l.said.lock().unwrap_or_else(|e| e.into_inner()).0;
+            said["browsers"].as_array().is_some_and(|b| !b.is_empty())
+        })
+        .map(|l| {
+            let idle = now(l)["idle"].as_f64().unwrap_or(f64::INFINITY);
+            (idle, Arc::clone(&l.peer))
+        })
+        .collect()
+}
+
 /// Takes a seat's link until it goes, on the ssh's pipes
-fn take(input: &mut File) -> Result<()> {
+fn take(input: &mut File, out: &mut File) -> Result<()> {
     let mut lines = BufReader::new(input).lines();
     let read = |line: Option<std::io::Result<String>>| -> Result<Option<Value>> {
         match line {
@@ -88,23 +107,26 @@ fn take(input: &mut File) -> Result<()> {
         }
     };
     let said = read(lines.next())?.ok_or_else(|| failed("the seat went away at once"))?;
-    if !said["seat"]["host"].is_string() {
-        return Err(failed(format!("the seat said {said}, not where it is")));
-    }
+    let name = said["seat"]["host"]
+        .as_str()
+        .ok_or_else(|| failed(format!("the seat said {said}, not where it is")))?;
     let seat = Arc::new(Linked {
+        peer: Peer::new(name, Wire::Lines, out)?,
         said: Mutex::new((said.clone(), Instant::now())),
     });
     linked().push(Arc::clone(&seat));
     let taken = loop {
         match read(lines.next()) {
-            Ok(Some(message)) => {
+            Ok(Some(message)) if message.get("seat").is_some() => {
                 *seat.said.lock().unwrap_or_else(|e| e.into_inner()) = (message, Instant::now());
             }
+            Ok(Some(message)) => seat.peer.answer(&message),
             Ok(None) => break Ok(()),
             Err(e) => break Err(e),
         }
     };
     linked().retain(|l| !Arc::ptr_eq(l, &seat));
+    seat.peer.close();
     taken
 }
 
@@ -149,9 +171,14 @@ fn keep(host: String) {
     }
 }
 
-/// What the seat says to each host each TICK
-fn presence() -> Value {
-    json!({"seat": own(), "browsers": []})
+/// What the seat says to host each TICK
+fn presence(host: &str) -> Value {
+    let browsers = if browser::serves() == host {
+        browser::names()
+    } else {
+        vec![]
+    };
+    json!({"seat": own(), "browsers": browsers})
 }
 
 /// Sends a message on the link, unless the seat closed it
@@ -174,7 +201,7 @@ fn link(host: &str) -> Result<()> {
         .map_err(|e| failed(format!("can't run ssh to link {host}: {e}")))?;
     // None once the seat closes it, which ends the link on host
     let out = Arc::new(Mutex::new(child.stdin.take()));
-    let mut input = child.stdout.take().expect("piped");
+    let input = child.stdout.take().expect("piped");
     let mut stderr = child.stderr.take().expect("piped");
     let errors = thread::spawn(move || {
         let mut text = String::new();
@@ -186,7 +213,7 @@ fn link(host: &str) -> Result<()> {
         let host = host.to_string();
         thread::spawn(move || {
             while allowed(&host) {
-                if say(&out, &presence()).is_err() {
+                if say(&out, &presence(&host)).is_err() {
                     return;
                 }
                 thread::sleep(TICK);
@@ -194,8 +221,30 @@ fn link(host: &str) -> Result<()> {
             out.lock().unwrap_or_else(|e| e.into_inner()).take();
         })
     };
-    // host says nothing yet; its end of the link closes it
-    let _ = std::io::copy(&mut input, &mut std::io::sink());
+    for line in BufReader::new(input).lines() {
+        let Ok(line) = line else { break };
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+            eprintln!("hunch-host: {host} sent {line:?} on its link, not JSON");
+            continue;
+        };
+        let out = Arc::clone(&out);
+        let host = host.to_string();
+        // A command can take long, and the next one shouldn't wait for it
+        thread::spawn(move || {
+            let command = message["command"].as_str().unwrap_or_default();
+            let args: Vec<&str> = message["args"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let reply = match browser::answer(&host, command, &args) {
+                Ok(result) => json!({"id": message["id"], "result": result}),
+                Err(error) => json!({"id": message["id"], "error": error}),
+            };
+            let _ = say(&out, &reply);
+        });
+    }
     let status = child.wait();
     let _ = presenting.join();
     let errors = errors.join().unwrap_or_default();
@@ -210,11 +259,11 @@ fn link(host: &str) -> Result<()> {
 }
 
 /// What the seat's ssh runs on this host: takes the link in the service
-pub fn run_link(args: &[String], input: &mut File, _: &mut File, _: &AtomicBool) -> Result<()> {
+pub fn run_link(args: &[String], input: &mut File, out: &mut File, _: &AtomicBool) -> Result<()> {
     if !args.is_empty() {
         return Err(Error::Usage("link takes no arguments".into(), crate::USAGE));
     }
-    take(input)
+    take(input, out)
 }
 
 pub fn run_seats(args: &[String], _: &mut File, out: &mut File, _: &AtomicBool) -> Result<()> {

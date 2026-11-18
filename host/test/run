@@ -685,6 +685,15 @@ linked() {
   [ "$(on "$1" hunch-host seats | jq length)" == "$2" ]
 }
 
+# Whether host NAME's agents get the pages of BROWSER
+serving() {
+  [ "$(on "$1" hunch-host browser read 2> /dev/null)" == "text of $2" ]
+}
+
+not_serving() {
+  ! serving "$@"
+}
+
 test_link_seats() {
   local own=0
   macos && own=1
@@ -710,6 +719,43 @@ test_link_broken() {
   wait_for grep -q "the link to nowhere broke" "$TEST_DIR/serve.log" ||
     die "No error in: $(< "$TEST_DIR/serve.log")"
   check_has error "$(< "$TEST_DIR/serve.log")" "Could not resolve hostname nowhere"
+}
+
+test_browser_serve() {
+  host thinkstation
+  browse Firefox
+  call browser serve thinkstation
+  check refused "$STATUS" 1
+  check_has err "$ERR" "thinkstation isn't in the browser's allow"
+  allow_browser thinkstation
+  call browser serve thinkstation
+  check status "$STATUS" 0
+  check out "$OUT" "serves thinkstation"
+  wait_for serving thinkstation Firefox || die "thinkstation got no pages"
+  call browser read
+  check here "$STATUS" 1
+  check_has err "$ERR" "Firefox serves thinkstation"
+  call browser status
+  check status "$(jq -cS . <<< "$OUT")" \
+    '{"allow":["thinkstation"],"browsers":["Firefox"],"serves":"thinkstation"}'
+  on thinkstation hunch-host browser dom '#x' 2> "$TEST_DIR/err" || true
+  check_has error "$(< "$TEST_DIR/err")" "Firefox: No element matches"
+  call browser serve localhost
+  call browser read
+  check back "$OUT" "text of Firefox"
+  wait_for not_serving thinkstation Firefox || die "thinkstation kept the pages"
+}
+
+test_browser_serve_unallowed() {
+  host thinkstation
+  browse Firefox
+  allow_browser thinkstation
+  call browser serve thinkstation
+  allow_browser
+  call browser status
+  check serves "$(jq -r .serves <<< "$OUT")" localhost
+  call browser read
+  check back "$OUT" "text of Firefox"
 }
 
 run() {

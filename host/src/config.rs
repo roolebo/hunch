@@ -45,6 +45,11 @@ fn hosts(allow: &Value) -> impl Iterator<Item = String> + '_ {
         .map(String::from)
 }
 
+/// The hosts the browser's pages may go to
+pub fn browser_allow() -> Vec<String> {
+    hosts(&read()["browser"]["allow"]).collect()
+}
+
 /// Every host some data of the seat may go to
 pub fn allowed() -> Vec<String> {
     let config = read();
