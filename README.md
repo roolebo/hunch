@@ -229,8 +229,10 @@ A host serves what it has through `hunch-host`, specified in
 ([COMPUTE.md](skills/hunch/COMPUTE.md)) and the seat where the human sits
 ([SEAT.md](skills/hunch/SEAT.md)).
 
-[host](host) implements them, with tmux and macOS as window managers,
-local speech models, and dictation on macOS; [macos](macos) is its tray.
+[host](host) implements them, with tmux, macOS and GNOME as window managers,
+local speech models, and dictation on macOS and Linux; [macos](macos)
+and [gnome](gnome) are its tray, which [docs/TRAY.md](docs/TRAY.md)
+describes.
 
 ## Agents
 

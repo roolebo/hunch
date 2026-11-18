@@ -1,8 +1,9 @@
 # Hunch for macOS
 
 The tray of hunch on macOS. It runs [hunch-host](../host) as the
-human's service and starts at login; its menu and settings show what
-the service does and needs, and set the seat.
+human's service and starts at login; its menu and settings, which
+[docs/TRAY.md](../docs/TRAY.md) describes, show what the service does
+and needs, and set the seat.
 
     make
     open build/Hunch.app
