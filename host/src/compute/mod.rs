@@ -4,9 +4,9 @@
 //! keys, the ones transcribe.cpp writes.
 
 mod gguf;
-pub mod wav;
 
 use crate::error::{Error, Result, failed};
+use crate::wav;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

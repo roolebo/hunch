@@ -16,6 +16,8 @@ mod macos;
 mod seat;
 #[cfg(unix)]
 mod service;
+#[cfg(any(feature = "compute", feature = "seat"))]
+mod wav;
 #[cfg(feature = "wm")]
 mod wm;
 

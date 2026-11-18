@@ -1,6 +1,6 @@
 //! Records the default microphone as compute takes audio: 16 kHz mono.
 
-use crate::compute::wav::RATE;
+use crate::wav::RATE;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Data, SampleFormat};
 use std::sync::{Arc, Mutex, mpsc};

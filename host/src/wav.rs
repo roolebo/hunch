@@ -1,5 +1,6 @@
-//! Reads the WAV the compute protocol takes for audio: 16-bit PCM, 16 kHz,
-//! mono.
+//! The WAV the compute protocol takes for audio: 16-bit PCM, 16 kHz,
+//! mono. A compute reads it; a seat writes it for a compute on another
+//! host.
 
 pub const RATE: u32 = 16_000;
 const PCM: u16 = 1;
@@ -51,6 +52,30 @@ pub fn parse(wav: &[u8]) -> Result<Vec<f32>, String> {
     Err("INPUT has no data".into())
 }
 
+/// pcm, samples in [-1, 1] at RATE, as such a WAV
+pub fn write(pcm: &[f32]) -> Vec<u8> {
+    let data: Vec<u8> = pcm
+        .iter()
+        .flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+        .collect();
+    let mut wav = Vec::with_capacity(44 + data.len());
+    wav.extend(b"RIFF");
+    wav.extend((36 + data.len() as u32).to_le_bytes());
+    wav.extend(b"WAVEfmt ");
+    wav.extend(16u32.to_le_bytes());
+    wav.extend(PCM.to_le_bytes());
+    // Mono: one channel, two bytes a frame
+    wav.extend(1u16.to_le_bytes());
+    wav.extend(RATE.to_le_bytes());
+    wav.extend((RATE * 2).to_le_bytes());
+    wav.extend(2u16.to_le_bytes());
+    wav.extend(16u16.to_le_bytes());
+    wav.extend(b"data");
+    wav.extend((data.len() as u32).to_le_bytes());
+    wav.extend(data);
+    wav
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,6 +104,14 @@ mod tests {
         assert_eq!(
             parse(&wav(1, RATE, &[0, 16384, -32768])).unwrap(),
             [0.0, 0.5, -1.0]
+        );
+    }
+
+    #[test]
+    fn write_makes_what_parse_reads() {
+        assert_eq!(
+            parse(&write(&[0.0, 0.5, -1.0])).unwrap(),
+            [0.0, 16383.0 / 32768.0, -32767.0 / 32768.0]
         );
     }
 
