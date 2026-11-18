@@ -126,8 +126,13 @@ fn load() -> Settings {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     Settings {
+        // Not one saved by a build of this host with a compute
         compute: saved["compute"]
             .as_str()
+            .filter(|c| {
+                c.split_once(' ')
+                    .is_some_and(|(host, _)| cfg!(feature = "compute") || host != LOCALHOST)
+            })
             .map(String::from)
             .or_else(|| cfg!(feature = "compute").then(|| COMPUTE.into())),
         model: saved["model"].as_str().map(String::from),
