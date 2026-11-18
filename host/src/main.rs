@@ -31,6 +31,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "\
 Usage: hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
+       hunch-host roles
        hunch-host wms
        hunch-host seats
        hunch-host link
@@ -44,6 +45,7 @@ Roles:
   browser       the browser the human uses at the seat
 
 hunch-host ROLE --help lists the commands of ROLE.
+roles prints the roles this hunch-host is built with.
 wms prints the window managers not inside another one.
 seats prints the seats linked to this host, and its own.
 link takes a seat's link, on stdin and stdout; the seat runs it by ssh.
@@ -55,6 +57,7 @@ serve runs the service, which every other command asks.";
 fn run(args: &[String]) -> Result<()> {
     match args {
         [flag] if flag == "-h" || flag == "--help" => println!("{USAGE}"),
+        [command] if command == "roles" => println!("{}", serde_json::json!(roles())),
         [command] if command == "wms" => println!("{}", serde_json::json!(wms())),
         [command, flags @ ..] if command == "needs" => needs(flags)?,
         #[cfg(unix)]
@@ -131,6 +134,22 @@ fn start() {
     seat::start();
     #[cfg(feature = "browser")]
     link::start();
+}
+
+fn roles() -> Vec<&'static str> {
+    [
+        cfg!(feature = "wm").then_some("wm"),
+        cfg!(feature = "compute").then_some("compute"),
+        cfg!(all(
+            feature = "seat",
+            any(target_os = "macos", target_os = "linux")
+        ))
+        .then_some("seat"),
+        cfg!(all(unix, feature = "browser")).then_some("browser"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn wms() -> Vec<&'static str> {

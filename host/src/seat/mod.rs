@@ -56,6 +56,7 @@ const FOCUS: &str = "focus";
 const LOCALHOST: &str = "localhost";
 const LOCAL: &str = "local:";
 const COMPUTE: &str = "localhost local:";
+const NO_COMPUTE: &str = "no compute: pick where speech goes in hunch's menu";
 #[cfg(feature = "compute")]
 const WARM_VAR: &str = "GGML_METAL_RESIDENCY_KEEP_ALIVE_S";
 /// Ten years, in seconds: as good as always, and within an int
@@ -71,8 +72,9 @@ const KEYS_RETRY: Duration = Duration::from_secs(5);
 /// What the seat keeps across restarts
 #[derive(Clone)]
 struct Settings {
-    /// COMPUTE, as HOST ADDR
-    compute: String,
+    /// COMPUTE, as HOST ADDR; none on a host without one, until the
+    /// human picks one elsewhere
+    compute: Option<String>,
     model: Option<String>,
     target: String,
     submit: bool,
@@ -124,7 +126,10 @@ fn load() -> Settings {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     Settings {
-        compute: saved["compute"].as_str().unwrap_or(COMPUTE).into(),
+        compute: saved["compute"]
+            .as_str()
+            .map(String::from)
+            .or_else(|| cfg!(feature = "compute").then(|| COMPUTE.into())),
         model: saved["model"].as_str().map(String::from),
         target: saved["target"].as_str().unwrap_or(FOCUS).into(),
         submit: saved["submit"].as_bool().unwrap_or(true),
@@ -226,7 +231,9 @@ fn split(compute: &str) -> (&str, &str) {
 
 /// Loads the model in the background, so the first dictation doesn't wait
 fn preload(model: String) {
-    let compute = lock().settings.compute.clone();
+    let Some(compute) = lock().settings.compute.clone() else {
+        return;
+    };
     thread::spawn(move || {
         if let Err(e) = load_on(&compute, &model) {
             change(|s| s.error = Some(e.to_string()));
@@ -403,8 +410,11 @@ fn press() {
     if lock().recording.is_some() || lock().opening {
         return;
     }
+    if lock().settings.compute.is_none() {
+        return change(|s| s.error = Some(NO_COMPUTE.into()));
+    }
     if lock().settings.model.is_none() {
-        return change(|s| s.error = Some("no model: pick one in the tray".into()));
+        return change(|s| s.error = Some("no model: pick one in hunch's menu".into()));
     }
     eprintln!("hunch-host: dictation starts");
     let mut open = false;
@@ -497,7 +507,11 @@ fn dictate(recording: audio::Recording, settings: &Settings, send: bool) -> Resu
         )));
     }
     let model = settings.model.as_deref().expect("press checks for a model");
-    let text = transcribe(&settings.compute, model, &pcm)?;
+    let compute = settings
+        .compute
+        .as_deref()
+        .expect("press checks for a compute");
+    let text = transcribe(compute, model, &pcm)?;
     if text.is_empty() {
         eprintln!("hunch-host: dictation heard no words");
         return Ok(());
@@ -653,7 +667,7 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
         ["model", model] => {
             // Not under the lock: a compute elsewhere answers over ssh
             let compute = lock().settings.compute.clone();
-            known(&compute, model)?;
+            known(&compute.ok_or_else(|| failed(NO_COMPUTE))?, model)?;
             set(|s| s.model = Some(model.to_string()));
             if lock().settings.preload {
                 preload(model.to_string());
@@ -701,7 +715,9 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
                 Some(model) if preloading => preload(model),
                 // Off frees the memory now, not only after a restart
                 #[cfg(feature = "compute")]
-                _ if !preloading && settings.compute == COMPUTE => compute::unload(),
+                _ if !preloading && settings.compute.as_deref() == Some(COMPUTE) => {
+                    compute::unload()
+                }
                 _ => {}
             }
             format!("preload {on}")
@@ -717,7 +733,7 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
                 (host, _) => allowed(host)?,
             }
             let compute = format!("{host} {addr}");
-            set(|s| s.compute = compute.clone());
+            set(|s| s.compute = Some(compute.clone()));
             format!("compute {compute}")
         }
         _ => {
