@@ -204,6 +204,7 @@ fn needs(flags: &[String]) -> Result<()> {
 }
 
 fn main() -> ExitCode {
+    #[cfg_attr(not(all(unix, feature = "browser")), allow(unused_mut))]
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // The browser runs it by this name for its extension, with arguments
     // of its own
