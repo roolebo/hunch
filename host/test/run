@@ -729,7 +729,7 @@ test_link_seats() {
   on thinkstation hunch-host seats > "$TEST_DIR/out"
   check host "$(jq -r '.[-1].host' "$TEST_DIR/out")" "$(hostname -s)"
   if macos; then
-    check locked "$(jq '.[-1].locked' "$TEST_DIR/out")" false
+    check locked "$(jq -r '.[-1].locked | type' "$TEST_DIR/out")" boolean
     check idle "$(jq -r '.[-1].idle | type' "$TEST_DIR/out")" number
   else
     check unknown "$(jq -c '.[-1] | [.locked, .idle]' "$TEST_DIR/out")" '[null,null]'
