@@ -14,7 +14,8 @@ export function hostName(host) {
 }
 
 /// Runs hunch-host ARGS, or ssh to HOST then hunch-host, with input on
-/// its stdin; its stdout, or an Error with what it said on stderr
+/// its stdin; its stdout, or an Error with the first line it said on
+/// stderr: the rest is usage, too long for a menu
 export function hunchHost(args, {input = null, host = LOCALHOST} = {}) {
     const argv = host === LOCALHOST
         ? ['hunch-host', ...args]
@@ -35,7 +36,7 @@ export function hunchHost(args, {input = null, host = LOCALHOST} = {}) {
                 if (p.get_successful())
                     resolve(out.trim());
                 else
-                    reject(new Error(err.trim().replace(/^hunch-host: /, '')));
+                    reject(new Error(err.trim().split('\n')[0].replace(/^hunch-host: /, '')));
             } catch (e) {
                 reject(e);
             }

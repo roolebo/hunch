@@ -505,7 +505,7 @@ class Indicator extends PanelMenu.Button {
             const hosts = data.roles.includes('compute') ? [LOCALHOST, ...data.allow] : data.allow;
             const computes = hosts.map(h => [`${h} ${LOCAL}`, hostName(h)]);
             if (hosts.length === 0)
-                this._item(this.menu, 'Speech goes nowhere: allow a host in Settings…');
+                this._item(this.menu, 'Allow a Host to Transcribe On…', async () => this._extension.openPreferences());
             else
                 this._allowed(this._choices(data.host ? `Speech to ${hostName(data.host)}` : 'Speech to…',
                     computes, seat.compute, compute => hunchHost(['seat', 'compute', ...compute.split(' ')])));

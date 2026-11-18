@@ -132,7 +132,8 @@ export default class HunchPreferences extends ExtensionPreferences {
     async _hosts(page) {
         const microphone = await mic().catch(() => null);
         if (microphone) {
-            page.add(this._allow('Speech may go to', `Of ${microphone.name}, to transcribe it there`,
+            page.add(this._allow('Speech may go to',
+                `Hosts that transcribe what ${microphone.name} hears: ones you ssh to that run hunch-host with a compute`,
                 config => config.devices?.[microphone.id]?.allow ?? [],
                 (config, hosts) => {
                     config.devices ??= {};
