@@ -462,6 +462,7 @@ class Indicator extends PanelMenu.Button {
             item.setOrnament(value === chosen ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
         }
         this.menu.addMenuItem(submenu);
+        return submenu;
     }
 
     async _status() {
@@ -477,15 +478,15 @@ class Indicator extends PanelMenu.Button {
     /// host's models come over ssh
     async _refresh() {
         // None until the human picks one, on a host without a compute
-        const host = this._seat?.compute?.split(' ')[0] ?? null;
+        const [host, addr] = this._seat?.compute?.split(' ') ?? [null, null];
         const [status, roles, allow, models, browser] = await Promise.all([
             this._status(),
             hunchHost(['roles']).then(JSON.parse, () => []),
             micAllow(),
-            host && hunchHost(['compute', LOCAL, 'models'], {host}).then(JSON.parse, e => e),
+            host && hunchHost(['compute', addr, 'models'], {host}).then(JSON.parse, e => e),
             hunchHost(['browser', 'status']).then(JSON.parse, () => null),
         ]);
-        this._data = {status, roles, allow, host, models, browser};
+        this._data = {status, roles, allow, host, addr, models, browser};
         this._build();
     }
 
@@ -506,10 +507,10 @@ class Indicator extends PanelMenu.Button {
             if (hosts.length === 0)
                 this._item(this.menu, 'Speech goes nowhere: allow a host in Settings…');
             else
-                this._choices(data.host ? `Speech to ${hostName(data.host)}` : 'Speech to…', computes,
-                    seat.compute, compute => hunchHost(['seat', 'compute', ...compute.split(' ')]));
+                this._allowed(this._choices(data.host ? `Speech to ${hostName(data.host)}` : 'Speech to…',
+                    computes, seat.compute, compute => hunchHost(['seat', 'compute', ...compute.split(' ')])));
             if (data.host)
-                this._model(seat, data.host, data.models);
+                this._model(seat, data.host, data.addr, data.models);
             if (seat.target === 'focus') {
                 this._item(this.menu, 'Redirect to Window…', async () => {
                     const window = await this._desktop.pick();
@@ -528,7 +529,13 @@ class Indicator extends PanelMenu.Button {
         this._item(this.menu, 'Settings…', async () => this._extension.openPreferences());
     }
 
-    _model(seat, host, models) {
+    /// Ends SUBMENU of hosts with where the human allows them
+    _allowed(submenu) {
+        submenu.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._item(submenu.menu, 'Allowed Hosts…', async () => this._extension.openPreferences());
+    }
+
+    _model(seat, host, addr, models) {
         if (models instanceof Error) {
             this._item(this.menu, `No models on ${hostName(host)}: ${models.message}`);
             return;
@@ -543,9 +550,9 @@ class Indicator extends PanelMenu.Button {
         if (!model || seat.loading)
             return;
         if (model.loaded)
-            this._item(this.menu, 'Eject', () => hunchHost(['compute', LOCAL, 'unload'], {host}));
+            this._item(this.menu, 'Eject', () => hunchHost(['compute', addr, 'unload'], {host}));
         else
-            this._item(this.menu, 'Load', () => hunchHost(['compute', LOCAL, 'load', model.id], {host}));
+            this._item(this.menu, 'Load', () => hunchHost(['compute', addr, 'load', model.id], {host}));
     }
 
     _browser(browser) {
@@ -562,8 +569,7 @@ class Indicator extends PanelMenu.Button {
             const item = this._item(submenu.menu, hostName(host), () => hunchHost(['browser', 'serve', host]));
             item.setOrnament(host === browser.serves ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
         }
-        submenu.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._item(submenu.menu, 'Allowed Hosts…', async () => this._extension.openPreferences());
+        this._allowed(submenu);
         this.menu.addMenuItem(submenu);
     }
 });
