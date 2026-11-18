@@ -10,7 +10,7 @@ default = ["wm", "compute", "seat", "browser"]
 wm = []
 browser = []
 compute = ["dep:transcribe-cpp"]
-seat = ["wm", "compute", "dep:cpal"]
+seat = ["wm", "dep:cpal"]
 
 [dependencies]
 serde_json = "1"

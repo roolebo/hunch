@@ -550,6 +550,30 @@ test_seat_errors() {
   check_has err "$ERR" "nothing dictated"
 }
 
+test_seat_compute_elsewhere() {
+  local mic
+  macos || return 0
+  host thinkstation
+  hub org/speech rev/speech.gguf stt.encoder=x
+  seat compute thinkstation local:
+  # A runner without a microphone has no allow to check
+  [[ $ERR == *"no microphone"* ]] && return 0
+  check refused "$STATUS" 1
+  check_has err "$ERR" "thinkstation isn't in the allow of the microphone"
+  mic=$(sed -n 's/.*allow of the microphone \(.*\); the human.*/\1/p' <<< "$ERR")
+  jq -n --arg mic "$mic" '{devices: {($mic): {allow: ["thinkstation"]}}}' \
+    > "$XDG_CONFIG_HOME/hunch/seat.json"
+  seat compute thinkstation local:
+  check status "$STATUS" 0
+  seat model org/speech
+  check model "$STATUS" 0
+  seat model org/none
+  check unknown "$STATUS" 4
+  check_has err "$ERR" "thinkstation has no model org/none"
+  seat context
+  check compute "$(jq -r .compute <<< "$OUT")" "thinkstation local:"
+}
+
 test_seat_watch() {
   macos || return 0
   "$HOST" seat watch > "$TEST_DIR/watch" &

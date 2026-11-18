@@ -5,7 +5,7 @@
 mod browser;
 #[cfg(feature = "compute")]
 mod compute;
-#[cfg(all(unix, feature = "browser"))]
+#[cfg(all(unix, any(feature = "browser", feature = "seat")))]
 mod config;
 mod error;
 #[cfg(all(unix, feature = "browser"))]

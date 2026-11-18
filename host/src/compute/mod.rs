@@ -24,7 +24,6 @@ Commands:
 ADDR is local: so far. TYPE is audio/wav so far: 16-bit PCM, 16 kHz, mono.";
 
 const LOCAL: &str = "local:";
-const WAV: &str = "audio/wav";
 /// The prefix of the metadata keys transcribe.cpp writes
 const STT: &str = "stt.";
 /// Deep enough for publisher/model/file, as LM Studio lays models out
@@ -42,7 +41,7 @@ impl Model {
         json!({
             "id": self.id,
             "name": self.name,
-            "inputs": [WAV],
+            "inputs": [wav::TYPE],
             "loaded": loaded_id().as_deref() == Some(self.id.as_str()),
             "size": self.size,
         })
@@ -261,7 +260,7 @@ pub fn run(args: &[String], input: &mut dyn Read, out: &mut dyn Write) -> Result
             write(out, &Value::from(models))?;
         }
         [LOCAL, "run", id, kind] => {
-            if *kind != WAV {
+            if *kind != wav::TYPE {
                 return Err(Error::Unknown(format!("{id} doesn't take {kind}")));
             }
             let mut wav = vec![];

@@ -59,6 +59,17 @@ fn record(samples: Arc<Mutex<Vec<f32>>>) -> Result<(cpal::Stream, u32), String> 
     Ok((stream, config.sample_rate()))
 }
 
+/// The default microphone's DEVICE, as the seat's config names it
+pub fn mic() -> Result<String, String> {
+    let device = cpal::default_host()
+        .default_input_device()
+        .ok_or("there's no microphone")?;
+    let id = device
+        .id()
+        .map_err(|e| format!("can't tell the microphone's id: {e}"))?;
+    Ok(id.id().to_string())
+}
+
 /// Samples at rate brought to RATE: from a whole multiple by averaging
 /// blocks, a crude low-pass enough for speech models; from any other rate
 /// by interpolating, with no low-pass.

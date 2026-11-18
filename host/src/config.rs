@@ -46,11 +46,19 @@ fn hosts(allow: &Value) -> impl Iterator<Item = String> + '_ {
 }
 
 /// The hosts the browser's pages may go to
+#[cfg(feature = "browser")]
 pub fn browser_allow() -> Vec<String> {
     hosts(&read()["browser"]["allow"]).collect()
 }
 
+/// The hosts the data of device, a DEVICE of SEAT.md, may go to
+#[cfg(feature = "seat")]
+pub fn device_allow(device: &str) -> Vec<String> {
+    hosts(&read()["devices"][device]["allow"]).collect()
+}
+
 /// Every host some data of the seat may go to
+#[cfg(feature = "browser")]
 pub fn allowed() -> Vec<String> {
     let config = read();
     let devices = config["devices"].as_object().into_iter().flatten();

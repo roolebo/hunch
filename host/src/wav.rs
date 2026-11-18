@@ -2,18 +2,23 @@
 //! mono. A compute reads it; a seat writes it for a compute on another
 //! host.
 
+/// Its media type, as the compute protocol names it
+pub const TYPE: &str = "audio/wav";
 pub const RATE: u32 = 16_000;
 const PCM: u16 = 1;
 
+#[cfg(feature = "compute")]
 fn u16_at(b: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([b[at], b[at + 1]])
 }
 
+#[cfg(feature = "compute")]
 fn u32_at(b: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
 }
 
 /// The samples, in [-1, 1]
+#[cfg(feature = "compute")]
 pub fn parse(wav: &[u8]) -> Result<Vec<f32>, String> {
     if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
         return Err("INPUT isn't a WAV file".into());
@@ -53,6 +58,7 @@ pub fn parse(wav: &[u8]) -> Result<Vec<f32>, String> {
 }
 
 /// pcm, samples in [-1, 1] at RATE, as such a WAV
+#[cfg(feature = "seat")]
 pub fn write(pcm: &[f32]) -> Vec<u8> {
     let data: Vec<u8> = pcm
         .iter()
@@ -107,6 +113,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "seat")]
     #[test]
     fn write_makes_what_parse_reads() {
         assert_eq!(

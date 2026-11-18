@@ -4,9 +4,11 @@
 
 mod audio;
 
+#[cfg(feature = "compute")]
+use crate::compute;
 use crate::error::{Error, Result, failed};
 use crate::macos::{self, Key};
-use crate::{compute, wm};
+use crate::{config, wav, wm};
 use serde_json::{Value, json};
 use std::fs::File;
 use std::io::Write;
@@ -32,16 +34,20 @@ Commands:
                         from the service's next start
   key KEY               Dictate while KEY is held: right-super,
                         right-alt, right-control, right-shift or fn
-  compute COMPUTE       Transcribe with COMPUTE; localhost local: so far
+  compute COMPUTE       Transcribe with COMPUTE: localhost local:, or
+                        HOST ADDR, a host in the microphone's allow
 
 TARGET is focus, or HOST ADDR WINDOW. Escape cancels a dictation.";
 
 const WM: &str = "macos:";
 const FOCUS: &str = "focus";
 const LOCALHOST: &str = "localhost";
+const LOCAL: &str = "local:";
 const COMPUTE: &str = "localhost local:";
+#[cfg(feature = "compute")]
 const WARM_VAR: &str = "GGML_METAL_RESIDENCY_KEEP_ALIVE_S";
 /// Ten years, in seconds: as good as always, and within an int
+#[cfg(feature = "compute")]
 const WARM_ALWAYS: &str = "315360000";
 /// Handy's default, which the human knows
 const DEFAULT_KEY: &str = "right-super";
@@ -53,6 +59,8 @@ const KEYS_RETRY: Duration = Duration::from_secs(5);
 /// What the seat keeps across restarts
 #[derive(Clone)]
 struct Settings {
+    /// COMPUTE, as HOST ADDR
+    compute: String,
     model: Option<String>,
     target: String,
     submit: bool,
@@ -104,6 +112,7 @@ fn load() -> Settings {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     Settings {
+        compute: saved["compute"].as_str().unwrap_or(COMPUTE).into(),
         model: saved["model"].as_str().map(String::from),
         target: saved["target"].as_str().unwrap_or(FOCUS).into(),
         submit: saved["submit"].as_bool().unwrap_or(true),
@@ -120,6 +129,7 @@ fn load() -> Settings {
 fn save(settings: &Settings) {
     let path = settings_path();
     let json = json!({
+        "compute": settings.compute,
         "model": settings.model,
         "target": settings.target,
         "submit": settings.submit,
@@ -174,7 +184,7 @@ fn context(state: &State) -> Value {
         "opening": state.opening,
         "transcribing": state.transcribing,
         "loading": state.loading,
-        "compute": COMPUTE,
+        "compute": state.settings.compute,
         "model": state.settings.model,
         "target": state.settings.target,
         "submit": state.settings.submit,
@@ -186,6 +196,7 @@ fn context(state: &State) -> Value {
 }
 
 /// Loads the model, if it isn't, telling watches while it does
+#[cfg(feature = "compute")]
 fn load_model(model: &str) -> Result<()> {
     if compute::loaded_id().as_deref() == Some(model) {
         return Ok(());
@@ -196,13 +207,95 @@ fn load_model(model: &str) -> Result<()> {
     loaded
 }
 
+/// COMPUTE's host, and its ADDR
+fn split(compute: &str) -> (&str, &str) {
+    compute.split_once(' ').expect("compute is HOST ADDR")
+}
+
 /// Loads the model in the background, so the first dictation doesn't wait
 fn preload(model: String) {
+    let compute = lock().settings.compute.clone();
     thread::spawn(move || {
-        if let Err(e) = load_model(&model) {
+        if let Err(e) = load_on(&compute, &model) {
             change(|s| s.error = Some(e.to_string()));
         }
     });
+}
+
+/// Has COMPUTE load the model
+fn load_on(compute: &str, model: &str) -> Result<()> {
+    match split(compute) {
+        #[cfg(feature = "compute")]
+        (LOCALHOST, LOCAL) => load_model(model),
+        (LOCALHOST, addr) => Err(no_compute(addr)),
+        (host, addr) => {
+            change(|s| s.loading = true);
+            let loaded = ssh(host, &["compute", addr, "load", model], &[]);
+            change(|s| s.loading = false);
+            loaded.map(drop)
+        }
+    }
+}
+
+/// Fails unless COMPUTE runs the model
+fn known(compute: &str, model: &str) -> Result<()> {
+    match split(compute) {
+        #[cfg(feature = "compute")]
+        (LOCALHOST, LOCAL) => compute::find(model).map(drop),
+        (LOCALHOST, addr) => Err(no_compute(addr)),
+        (host, addr) => {
+            let models = ssh(host, &["compute", addr, "models"], &[])?;
+            let models: Value = serde_json::from_slice(&models)
+                .map_err(|e| failed(format!("{host}'s models aren't JSON: {e}")))?;
+            let known = models
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|m| m["id"] == model);
+            known
+                .then_some(())
+                .ok_or_else(|| Error::Unknown(format!("{host} has no model {model}")))
+        }
+    }
+}
+
+fn no_compute(addr: &str) -> Error {
+    failed(format!(
+        "this seat runs no compute {addr}: pick one on another host"
+    ))
+}
+
+/// Fails unless the microphone's allow lists host, as SEAT.md says
+fn allowed(host: &str) -> Result<()> {
+    let mic = audio::mic().map_err(failed)?;
+    if config::device_allow(&mic).iter().any(|h| h == host) {
+        return Ok(());
+    }
+    Err(failed(format!(
+        "{host} isn't in the allow of the microphone {mic}; the human adds it in the seat's config"
+    )))
+}
+
+/// The text of pcm, by COMPUTE
+fn transcribe(compute: &str, model: &str, pcm: &[f32]) -> Result<String> {
+    match split(compute) {
+        #[cfg(feature = "compute")]
+        (LOCALHOST, LOCAL) => {
+            load_model(model)?;
+            compute::transcribe(model, pcm)
+        }
+        (LOCALHOST, addr) => Err(no_compute(addr)),
+        (host, addr) => {
+            // Checked again, since the human may have changed it since
+            allowed(host)?;
+            let text = ssh(
+                host,
+                &["compute", addr, "run", model, wav::TYPE],
+                &wav::write(pcm),
+            )?;
+            Ok(String::from_utf8_lossy(&text).trim_end().to_string())
+        }
+    }
 }
 
 /// Starts watching the dictation key; the service calls it once, before
@@ -211,11 +304,14 @@ pub fn start() {
     let settings = lock().settings.clone();
     // ggml reads it once, when it loads the first model, and lets the
     // model's GPU memory go after it's idle this long
-    let seconds = settings
-        .warm
-        .map_or(WARM_ALWAYS.to_string(), |m| (m * 60).to_string());
-    // SAFETY: no other thread runs yet to read the environment
-    unsafe { std::env::set_var(WARM_VAR, seconds) };
+    #[cfg(feature = "compute")]
+    {
+        let seconds = settings
+            .warm
+            .map_or(WARM_ALWAYS.to_string(), |m| (m * 60).to_string());
+        // SAFETY: no other thread runs yet to read the environment
+        unsafe { std::env::set_var(WARM_VAR, seconds) };
+    }
     if let (true, Some(model)) = (settings.preload, settings.model) {
         preload(model);
     }
@@ -373,8 +469,7 @@ fn dictate(recording: audio::Recording, settings: &Settings, send: bool) -> Resu
         ));
     }
     let model = settings.model.as_deref().expect("press checks for a model");
-    load_model(model)?;
-    let text = compute::transcribe(model, &pcm)?;
+    let text = transcribe(&settings.compute, model, &pcm)?;
     if text.is_empty() {
         eprintln!("hunch-host: dictation heard no words");
         return Ok(());
@@ -427,9 +522,9 @@ fn deliver(target: &str, text: &str, submit: bool) -> Result<()> {
             Ok(())
         }
         [host, addr, window] => {
-            ssh(host, &["wm", addr, "send", window], Some(text))?;
+            ssh(host, &["wm", addr, "send", window], text.as_bytes())?;
             if submit {
-                ssh(host, &["wm", addr, "submit", window], None)?;
+                ssh(host, &["wm", addr, "submit", window], &[])?;
             }
             Ok(())
         }
@@ -439,32 +534,35 @@ fn deliver(target: &str, text: &str, submit: bool) -> Result<()> {
     }
 }
 
-fn ssh(host: &str, args: &[&str], input: Option<&str>) -> Result<()> {
+/// Runs hunch-host ARGS on host, input on its stdin; its stdout
+fn ssh(host: &str, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
     let mut child = Command::new("ssh")
-        .arg(host)
-        .arg("hunch-host")
+        // The service has no one to ask for a password or a host key
+        .args(["-o", "BatchMode=yes", host, "hunch-host"])
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| failed(format!("can't run ssh: {e}")))?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin
-            .write_all(input.as_bytes())
-            .map_err(|e| failed(format!("can't send the text to {host}: {e}")))?;
-    }
+    let mut stdin = child.stdin.take().expect("piped");
+    // On a thread, so a big input and a big answer don't wait for each other
+    let input = input.to_vec();
+    let writer = thread::spawn(move || stdin.write_all(&input));
     let output = child
         .wait_with_output()
         .map_err(|e| failed(format!("ssh {host} didn't finish: {e}")))?;
+    let written = writer.join().expect("write doesn't panic");
     match output.status.code() {
-        Some(0) => Ok(()),
+        Some(0) => {
+            written.map_err(|e| failed(format!("can't send to {host}: {e}")))?;
+            Ok(output.stdout)
+        }
         status => {
             let message = format!("{host}: {}", String::from_utf8_lossy(&output.stderr).trim());
-            Err(if status == Some(4) {
-                Error::Gone(message)
-            } else {
-                failed(message)
+            Err(match status {
+                Some(4) => Error::Gone(message),
+                _ => failed(message),
             })
         }
     }
@@ -507,7 +605,9 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
             .ok_or_else(|| failed("nothing dictated since the service started"))?,
         ["watch"] => return watch(out, gone),
         ["model", model] => {
-            compute::find(model)?;
+            // Not under the lock: a compute elsewhere answers over ssh
+            let compute = lock().settings.compute.clone();
+            known(&compute, model)?;
             set(|s| s.model = Some(model.to_string()));
             if lock().settings.preload {
                 preload(model.to_string());
@@ -550,10 +650,12 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
         ["preload", on @ ("on" | "off")] => {
             let preloading = *on == "on";
             set(|s| s.preload = preloading);
-            match lock().settings.model.clone() {
+            let settings = lock().settings.clone();
+            match settings.model {
                 Some(model) if preloading => preload(model),
                 // Off frees the memory now, not only after a restart
-                _ if !preloading => compute::unload(),
+                #[cfg(feature = "compute")]
+                _ if !preloading && settings.compute == COMPUTE => compute::unload(),
                 _ => {}
             }
             format!("preload {on}")
@@ -562,11 +664,15 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
             set(|s| s.submit = *on == "on");
             format!("submit {on}")
         }
-        ["compute", "localhost", "local:"] => format!("compute {COMPUTE}"),
-        ["compute", ..] => {
-            return Err(failed(format!(
-                "this seat transcribes with {COMPUTE} only, so far"
-            )));
+        ["compute", host, addr] => {
+            match (*host, *addr) {
+                (LOCALHOST, LOCAL) if cfg!(feature = "compute") => {}
+                (LOCALHOST, addr) => return Err(no_compute(addr)),
+                (host, _) => allowed(host)?,
+            }
+            let compute = format!("{host} {addr}");
+            set(|s| s.compute = compute.clone());
+            format!("compute {compute}")
         }
         _ => {
             return Err(Error::Usage(
