@@ -130,8 +130,8 @@ Rules:
   where their data goes: the speech to COMPUTE's host, the text to
   TARGET's, the browser's pages to the host it serves. For speech and
   pages it offers only the hosts in their allow.
-- Only the human sets allow, in the seat's config or from the tray; no
-  command sets it.
+- Only the human sets allow, in the seat's config (see Config) or from
+  the tray; no command sets it.
 - Escape while KEY is held cancels the recording. Another key, a
   shortcut with KEY or a key some program posts, stops it: the seat
   transcribes what it got, keeps it as the last transcription and says
@@ -144,6 +144,24 @@ Exit status:
 - 0: done
 - 1: failed, the reason is on stderr
 - 4: DEVICE or MODEL is unknown
+
+## Config
+
+The seat's config holds what the human lets leave the seat:
+`$XDG_CONFIG_HOME/hunch/seat.json`, `~/.config/hunch/seat.json` by
+default. The seat reads it each time it needs it and never writes it;
+the tray writes it for the human. A missing file or field is an empty
+allow.
+
+    browser.allow   the hosts the browser's pages may go to
+    devices         for each DEVICE, its allow
+
+```json
+{
+  "browser": {"allow": ["thinkstation"]},
+  "devices": {"BuiltInMicrophoneDevice": {"allow": ["thinkstation"]}}
+}
+```
 
 ## Where the human is
 

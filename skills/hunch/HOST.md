@@ -46,8 +46,23 @@ in its allows (see SEAT.md):
     ssh HOST hunch-host link
 
 The link goes out from the seat, as the human's ssh does, so no host has
-to reach a seat. It carries the seat's presence, and the commands of the
-seat's browser while that serves HOST.
+to reach a seat; ssh decides who may link, as for any login. It carries
+JSON messages, one per line.
+
+The seat says where the human is each second:
+
+    {"seat": {"host": "macbook-pro", "locked": false, "idle": 3.2}, "browsers": ["Firefox"]}
+
+- `seat`: the seat, as `seats` lists it
+- `browsers`: the name of each browser of the seat while it serves HOST,
+  else none
+
+HOST passes a command of BROWSER.md to those browsers; the seat answers
+with its id, the result or the error:
+
+    {"id": 7, "command": "read", "args": []}
+    {"id": 7, "result": "The text of the page"}
+    {"id": 8, "error": "No element matches"}
 
 Commands of the host itself:
 
@@ -56,7 +71,7 @@ Commands of the host itself:
                         array
     hunch-host seats    the seats linked to this host and its own, as a
                         JSON array of objects: host, locked, idle (see
-                        SEAT.md)
+                        SEAT.md, null where the seat can't tell)
     hunch-host needs [--ask] [--all]
                         what the human has yet to grant the service, as a
                         JSON array; --ask has the OS ask the human for it,
@@ -103,7 +118,9 @@ another:
                                     served, as JSON
 
 HOST's service passes its agents' commands to the browser through the
-seat's link (see Links). serve fails for a HOST not in the browser's
+seat's link (see Links). A command goes to the seat the human is at, the
+one with the least IDLE of those that serve HOST, and there to the
+browser the human used last. serve fails for a HOST not in the browser's
 allow, which only the human sets, as for a mic (see SEAT.md).
 
 status JSON:
