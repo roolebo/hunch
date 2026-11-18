@@ -7,7 +7,7 @@ import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {editConfig, hostName, hunchHost, mic, readConfig} from './hunch.js';
+import {editConfig, hunchHost, mic, readConfig, takePage} from './hunch.js';
 
 // The dictation keys hunch-host knows on Linux, as the human reads them
 const KEYS = [
@@ -44,15 +44,18 @@ export default class HunchPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         this._window = window;
         window.set_default_size(560, 640);
-        window.add(this._page('Dictation', 'audio-input-microphone-symbolic', this._dictation));
-        window.add(this._page('Hosts', 'network-server-symbolic', this._hosts));
-        window.add(this._page('Permissions', 'security-medium-symbolic', this._permissions));
-        window.add(this._page('About', 'help-about-symbolic', this._about));
+        window.add(this._page('dictation', 'Dictation', 'audio-input-microphone-symbolic', this._dictation));
+        window.add(this._page('hosts', 'Hosts', 'network-server-symbolic', this._hosts));
+        window.add(this._page('permissions', 'Permissions', 'security-medium-symbolic', this._permissions));
+        window.add(this._page('about', 'About', 'help-about-symbolic', this._about));
+        const page = takePage();
+        if (page)
+            window.visible_page_name = page;
     }
 
     /// A page, filled once hunch-host has answered
-    _page(title, icon, fill) {
-        const page = new Adw.PreferencesPage({title, icon_name: icon});
+    _page(name, title, icon, fill) {
+        const page = new Adw.PreferencesPage({name, title, icon_name: icon});
         fill.call(this, page).catch(e => this._toast(e.message));
         return page;
     }
@@ -132,8 +135,8 @@ export default class HunchPreferences extends ExtensionPreferences {
     async _hosts(page) {
         const microphone = await mic().catch(() => null);
         if (microphone) {
-            page.add(this._allow('Speech may go to',
-                `Hosts that transcribe what ${microphone.name} hears: ones you ssh to that run hunch-host with a compute`,
+            page.add(this._allow('Transcribe on',
+                `The hosts that may turn what ${microphone.name} hears into text`,
                 config => config.devices?.[microphone.id]?.allow ?? [],
                 (config, hosts) => {
                     config.devices ??= {};
@@ -141,15 +144,15 @@ export default class HunchPreferences extends ExtensionPreferences {
                     config.devices[microphone.id].allow = hosts;
                 }));
         }
-        page.add(this._allow('Pages may go to', 'Of the browser, for the agents there',
+        page.add(this._allow('Browser used by', 'The hosts whose agents may read and act on the browser\'s pages',
             config => config.browser?.allow ?? [],
             (config, hosts) => {
                 config.browser ??= {};
                 config.browser.allow = hosts;
             }));
         page.add(new Adw.PreferencesGroup({
-            description: `Data goes to one host at a time, the one you pick in the menu, besides ${hostName('localhost')}; ` +
-                'Hunch reaches it by ssh, as you do.',
+            description: 'A host here is one you reach by ssh HOST without a password, and that runs hunch-host. ' +
+                'Data goes to one host at a time, the one you pick in the menu.',
         }));
     }
 

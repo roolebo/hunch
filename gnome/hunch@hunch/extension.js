@@ -15,7 +15,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {LOCAL, LOCALHOST, hostName, hunchHost, micAllow} from './hunch.js';
+import {LOCAL, LOCALHOST, askPage, hostName, hunchHost, micAllow} from './hunch.js';
 
 // How long a line of hunch-host that ended waits before it runs again,
 // as when the service restarts
@@ -501,58 +501,75 @@ class Indicator extends PanelMenu.Button {
                 const text = await hunchHost(['seat', 'last']);
                 St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
             });
-            // Where the speech goes, among the hosts the human allowed
-            const hosts = data.roles.includes('compute') ? [LOCALHOST, ...data.allow] : data.allow;
-            const computes = hosts.map(h => [`${h} ${LOCAL}`, hostName(h)]);
-            if (hosts.length === 0)
-                this._item(this.menu, 'Allow a Host to Transcribe On…', async () => this._extension.openPreferences());
-            else
-                this._allowed(this._choices(data.host ? `Speech to ${hostName(data.host)}` : 'Speech to…',
-                    computes, seat.compute, compute => hunchHost(['seat', 'compute', ...compute.split(' ')])));
+            this._transcribe(seat, data);
             if (data.host)
                 this._model(seat, data.host, data.addr, data.models);
-            if (seat.target === 'focus') {
-                this._item(this.menu, 'Redirect to Window…', async () => {
-                    const window = await this._desktop.pick();
-                    await hunchHost(['seat', 'target', LOCALHOST, 'gnome:', window]);
-                });
-            } else {
-                const [, addr, window] = seat.target.split(' ');
-                const name = addr === 'gnome:' ? this._desktop.describe(window) : seat.target;
-                this._item(this.menu, `Stop Redirect to ${name}`,
-                    () => hunchHost(['seat', 'target', 'focus']));
-            }
+            this._type(seat);
         }
         if (data?.browser)
             this._browser(data.browser);
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._item(this.menu, 'Settings…', async () => this._extension.openPreferences());
+        this._item(this.menu, 'Settings…', async () => this._settings());
+    }
+
+    /// Opens the preferences, on PAGE if given
+    _settings(page = null) {
+        if (page)
+            askPage(page);
+        this._extension.openPreferences();
     }
 
     /// Ends SUBMENU of hosts with where the human allows them
     _allowed(submenu) {
         submenu.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._item(submenu.menu, 'Allowed Hosts…', async () => this._extension.openPreferences());
+        this._item(submenu.menu, 'Allow Hosts…', async () => this._settings('hosts'));
+    }
+
+    /// Where the speech goes, among the hosts the human allowed
+    _transcribe(seat, data) {
+        const hosts = data.roles.includes('compute') ? [LOCALHOST, ...data.allow] : data.allow;
+        if (hosts.length === 0) {
+            this._item(this.menu, 'Allow a Host to Transcribe On…', async () => this._settings('hosts'));
+            return;
+        }
+        const computes = hosts.map(h => [`${h} ${LOCAL}`, hostName(h)]);
+        this._allowed(this._choices(`Transcribe on: ${data.host ? hostName(data.host) : 'None'}`,
+            computes, seat.compute, compute => hunchHost(['seat', 'compute', ...compute.split(' ')])));
     }
 
     _model(seat, host, addr, models) {
         if (models instanceof Error) {
-            this._item(this.menu, `No models on ${hostName(host)}: ${models.message}`);
+            this._item(this.menu, `Model: none on ${hostName(host)}: ${models.message}`);
             return;
         }
         const model = models.find(m => m.id === seat.model);
-        const title = model ? model.name ?? model.id : 'No model';
         // A loaded model takes about its file's size in memory
         const state = seat.loading ? ' · loading'
             : model?.loaded ? ` · ${GLib.format_size(model.size)}` : '';
-        this._choices(title + state, models.map(m => [m.id, m.name ?? m.id]), seat.model,
-            id => hunchHost(['seat', 'model', id]));
+        const submenu = this._choices(`Model: ${model ? model.name ?? model.id : 'None'}${state}`,
+            models.map(m => [m.id, m.name ?? m.id]), seat.model, id => hunchHost(['seat', 'model', id]));
         if (!model || seat.loading)
             return;
+        submenu.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         if (model.loaded)
-            this._item(this.menu, 'Eject', () => hunchHost(['compute', addr, 'unload'], {host}));
+            this._item(submenu.menu, 'Eject', () => hunchHost(['compute', addr, 'unload'], {host}));
         else
-            this._item(this.menu, 'Load', () => hunchHost(['compute', addr, 'load', model.id], {host}));
+            this._item(submenu.menu, 'Load', () => hunchHost(['compute', addr, 'load', model.id], {host}));
+    }
+
+    /// Where the text goes: the focused window, or one the human picks
+    _type(seat) {
+        const [, addr, window] = seat.target.split(' ');
+        const name = seat.target === 'focus' ? 'Focused Window'
+            : addr === 'gnome:' ? this._desktop.describe(window) : seat.target;
+        const submenu = new PopupMenu.PopupSubMenuMenuItem(`Type into: ${name}`);
+        const focused = this._item(submenu.menu, 'Focused Window', () => hunchHost(['seat', 'target', 'focus']));
+        focused.setOrnament(seat.target === 'focus' ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
+        this._item(submenu.menu, 'Pick a Window…', async () => {
+            const picked = await this._desktop.pick();
+            await hunchHost(['seat', 'target', LOCALHOST, 'gnome:', picked]);
+        });
+        this.menu.addMenuItem(submenu);
     }
 
     _browser(browser) {
@@ -561,10 +578,9 @@ class Indicator extends PanelMenu.Button {
             this._item(this.menu, 'No browser connected');
             return;
         }
-        // What goes where, as for dictation; only the hosts the human
-        // allowed, as SEAT.md says
+        // Only the hosts the human allowed, as SEAT.md says
         const submenu = new PopupMenu.PopupSubMenuMenuItem(
-            `${browser.browsers.join(', ')} · pages to ${hostName(browser.serves)}`);
+            `${browser.browsers.join(', ')} · used by: ${hostName(browser.serves)}`);
         for (const host of [LOCALHOST, ...browser.allow]) {
             const item = this._item(submenu.menu, hostName(host), () => hunchHost(['browser', 'serve', host]));
             item.setOrnament(host === browser.serves ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);

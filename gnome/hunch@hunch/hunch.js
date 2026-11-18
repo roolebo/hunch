@@ -86,3 +86,24 @@ export function editConfig(change) {
     GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o700);
     GLib.file_set_contents(path, `${JSON.stringify(config, null, 2)}\n`);
 }
+
+/// Where the extension leaves the preferences' page to open, since GNOME
+/// passes them nothing
+function pagePath() {
+    return GLib.build_filenamev([GLib.get_user_runtime_dir(), 'hunch', 'prefs-page']);
+}
+
+export function askPage(name) {
+    GLib.mkdir_with_parents(GLib.path_get_dirname(pagePath()), 0o700);
+    GLib.file_set_contents(pagePath(), name);
+}
+
+/// The page the extension asked for, once; null if none
+export function takePage() {
+    const path = pagePath();
+    if (!GLib.file_test(path, GLib.FileTest.EXISTS))
+        return null;
+    const [, bytes] = GLib.file_get_contents(path);
+    GLib.unlink(path);
+    return new TextDecoder().decode(bytes);
+}
