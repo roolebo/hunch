@@ -2,9 +2,10 @@
 //! host in its allows, and tells it where the human is and passes the
 //! browser's commands on it.
 
-use crate::browser::{self, Peer, Wire};
+use crate::browser;
 use crate::config;
 use crate::error::{Error, Result, failed};
+use crate::peer::{Peer, Wire};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fs::File;

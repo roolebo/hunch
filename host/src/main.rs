@@ -12,6 +12,8 @@ mod error;
 mod link;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
+#[cfg(all(unix, feature = "browser"))]
+mod peer;
 #[cfg(all(feature = "seat", target_os = "macos"))]
 mod seat;
 #[cfg(unix)]

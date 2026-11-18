@@ -5,16 +5,14 @@
 //! own pipes.
 
 use crate::error::{Error, Result, failed};
+use crate::peer::{Peer, Wire};
 use crate::{config, link};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 pub const USAGE: &str = "\
 Usage: hunch-host browser COMMAND [ARGUMENTS]
@@ -40,98 +38,9 @@ pub const NATIVE: &str = "hunch-host-native";
 const HOST_NAME: &str = "hunch";
 const FIREFOX_EXTENSION: &str = "firefox-hunch@hunch";
 const LOCALHOST: &str = "localhost";
-/// How long a command waits for the extension's reply
-const REPLY_WAIT: Duration = Duration::from_secs(30);
-
-type Reply = std::result::Result<Value, String>;
-
-/// How a peer frames its messages
-pub enum Wire {
-    /// Native messaging's: the length in native byte order, then JSON
-    Native,
-    /// A link's: JSON, a line each
-    Lines,
-}
-
-/// What answers BROWSER.md's commands: an extension, or a seat through
-/// its link
-pub struct Peer {
-    pub name: String,
-    wire: Wire,
-    out: Mutex<File>,
-    waiting: Mutex<HashMap<u64, Sender<Reply>>>,
-}
-
-impl Peer {
-    pub fn new(name: &str, wire: Wire, out: &File) -> Result<Arc<Peer>> {
-        let out = out
-            .try_clone()
-            .map_err(|e| failed(format!("can't keep {name}'s output: {e}")))?;
-        Ok(Arc::new(Peer {
-            name: name.into(),
-            wire,
-            out: Mutex::new(out),
-            waiting: Mutex::new(HashMap::new()),
-        }))
-    }
-
-    fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Sender<Reply>>> {
-        self.waiting.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    fn send(&self, message: &Value) -> io::Result<()> {
-        let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
-        match self.wire {
-            Wire::Native => send(&mut out, message),
-            Wire::Lines => writeln!(out, "{message}"),
-        }
-    }
-
-    /// Hands a reply to the command waiting for it, if one still does
-    pub fn answer(&self, message: &Value) {
-        let Some(id) = message["id"].as_u64() else {
-            return;
-        };
-        let reply = match message.get("error").and_then(Value::as_str) {
-            Some(error) => Err(error.to_string()),
-            None => Ok(message["result"].clone()),
-        };
-        if let Some(waiting) = self.waiting().remove(&id) {
-            let _ = waiting.send(reply);
-        }
-    }
-
-    /// Tells each waiting command the peer is gone, by dropping its sender
-    pub fn close(&self) {
-        self.waiting().clear();
-    }
-
-    fn ask(&self, command: &str, args: &[&str]) -> Result<Value> {
-        let name = &self.name;
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let (reply, replied) = mpsc::channel();
-        self.waiting().insert(id, reply);
-        if let Err(e) = self.send(&json!({"id": id, "command": command, "args": args})) {
-            self.waiting().remove(&id);
-            return Err(failed(format!("can't reach {name}: {e}")));
-        }
-        match replied.recv_timeout(REPLY_WAIT) {
-            Ok(reply) => reply.map_err(|e| failed(format!("{name}: {e}"))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(failed(format!("{name} went away"))),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                self.waiting().remove(&id);
-                Err(failed(format!(
-                    "{name} didn't answer in {} s",
-                    REPLY_WAIT.as_secs()
-                )))
-            }
-        }
-    }
-}
 
 /// The connected browsers, the one the human used last at the end
 static BROWSERS: Mutex<Vec<Arc<Peer>>> = Mutex::new(Vec::new());
-static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// The HOST the pages go to
 static SERVES: Mutex<String> = Mutex::new(String::new());
 
@@ -177,14 +86,6 @@ fn receive(input: &mut File) -> io::Result<Option<Value>> {
     serde_json::from_slice(&message)
         .map(Some)
         .map_err(io::Error::other)
-}
-
-fn send(out: &mut File, message: &Value) -> io::Result<()> {
-    let message = message.to_string();
-    let length = u32::try_from(message.len()).map_err(io::Error::other)?;
-    out.write_all(&length.to_ne_bytes())?;
-    out.write_all(message.as_bytes())?;
-    out.flush()
 }
 
 /// Serves one extension until its browser closes the connection. It says
@@ -242,18 +143,18 @@ fn ask(command: &str, args: &[&str]) -> Result<Value> {
     peers.extend(link::serving());
     let nearest = peers.into_iter().min_by(|a, b| a.0.total_cmp(&b.0));
     match nearest {
-        Some((_, peer)) => peer.ask(command, args),
-        None => here.and_then(|browser| browser.ask(command, args)),
+        Some((_, peer)) => peer.ask(command, args, None),
+        None => here.and_then(|browser| browser.ask(command, args, None)),
     }
 }
 
 /// Runs a command HOST passed through its link, in this host's browser
-pub fn answer(host: &str, command: &str, args: &[&str]) -> Reply {
+pub fn answer(host: &str, command: &str, args: &[&str]) -> std::result::Result<Value, String> {
     if !matches!(command, "context" | "selection" | "read" | "dom") {
         return Err(format!("{command} isn't a command of BROWSER.md"));
     }
     local(host)
-        .and_then(|browser| browser.ask(command, args))
+        .and_then(|browser| browser.ask(command, args, None))
         .map_err(|e| e.to_string())
 }
 
