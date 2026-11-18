@@ -107,8 +107,9 @@ Rules:
 - A tiling wm places a window as near as its layout allows; windows shows
   where it went.
 - Only pick asks the human anything.
-- GNOME types only into the window in focus, so send and submit to
-  another window fail there.
+- GNOME lets no program type into a window but the one in focus, so
+  there send and submit give WINDOW the focus while they type, then
+  give it back: the one exception to the first rule.
 - A tty has no send or submit: only root can type into a tty that isn't
   its own. With one window, it has no swap, move, place or state either.
 

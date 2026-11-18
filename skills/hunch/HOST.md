@@ -146,8 +146,6 @@ line, as a link does (see Links):
 
 - the service sends a command of WM.md, its TEXT in `input`:
   `{"id": 3, "command": "send", "args": ["1234"], "input": "hello"}`
-- the service sends `presence` for the seat: the result is
-  `{"idle": 3.2, "locked": false}`
 - the extension answers with the command's id: `{"id": 3, "result":
   ...}`, or `{"id": 3, "error": "...", "status": 4}` with an exit
   status of WM.md
