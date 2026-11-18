@@ -68,7 +68,12 @@ serve() {
 }
 
 teardown() {
+  local pid
   stop
+  for pid in $HOSTS_SERVED; do
+    kill "$pid" 2> /dev/null || true
+    wait "$pid" 2> /dev/null || true
+  done
   t kill-server 2> /dev/null || true
   terminal kill-server 2> /dev/null || true
 }
@@ -652,6 +657,61 @@ test_browser_install() {
   check target "$(readlink "$(jq -r .path "$manifest")")" "$HOST"
 }
 
+# Another host, with a service of its own, that the fake ssh reaches as
+# NAME
+host() {
+  local dir=$HOSTS/$1
+  mkdir -p "$dir/home" "$dir/run" "$dir/config" "$dir/state"
+  # Not through on, a function, whose subshell would get the pid
+  "$DIR/bin/ssh" "$1" hunch-host serve 2>> "$dir/serve.log" &
+  HOSTS_SERVED="$HOSTS_SERVED $!"
+  wait_for [ -S "$dir/run/hunch/host.sock" ] ||
+    die "$1's service didn't start: $(< "$dir/serve.log")"
+}
+
+# Runs COMMAND on host NAME, as ssh does
+on() {
+  "$DIR/bin/ssh" "$@"
+}
+
+# Lets the seat's browser serve HOSTS
+allow_browser() {
+  jq -n '{browser: {allow: $ARGS.positional}}' --args "$@" \
+    > "$XDG_CONFIG_HOME/hunch/seat.json"
+}
+
+# Whether host NAME has COUNT seats linked
+linked() {
+  [ "$(on "$1" hunch-host seats | jq length)" == "$2" ]
+}
+
+test_link_seats() {
+  local own=0
+  macos && own=1
+  host thinkstation
+  allow_browser thinkstation
+  wait_for linked thinkstation $((own + 1)) || die "The seat didn't link"
+  call seats
+  check here "$(jq length <<< "$OUT")" $own
+  on thinkstation hunch-host seats > "$TEST_DIR/out"
+  check host "$(jq -r '.[-1].host' "$TEST_DIR/out")" "$(hostname -s)"
+  if macos; then
+    check locked "$(jq '.[-1].locked' "$TEST_DIR/out")" false
+    check idle "$(jq -r '.[-1].idle | type' "$TEST_DIR/out")" number
+  else
+    check unknown "$(jq -c '.[-1] | [.locked, .idle]' "$TEST_DIR/out")" '[null,null]'
+  fi
+  allow_browser
+  wait_for linked thinkstation $own || die "The seat didn't unlink"
+}
+
+test_link_broken() {
+  allow_browser nowhere
+  wait_for grep -q "the link to nowhere broke" "$TEST_DIR/serve.log" ||
+    die "No error in: $(< "$TEST_DIR/serve.log")"
+  check_has error "$(< "$TEST_DIR/serve.log")" "Could not resolve hostname nowhere"
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))
@@ -659,10 +719,14 @@ run() {
   TEST_DIR=$DIR/$N
   IN=$TEST_DIR/in
   TMUX_SOCKET=$TEST_DIR/tmux
+  HOSTS=$TEST_DIR/hosts
+  HOSTS_SERVED=
   mkdir -p "$TEST_DIR/home" "$TEST_DIR/run" "$TEST_DIR/config/hunch" \
-    "$TEST_DIR/state" "$TEST_DIR/hf"
+    "$TEST_DIR/state" "$TEST_DIR/hf" "$HOSTS"
   : > "$IN"
   (
+    export HOSTS
+    export PATH=$DIR/bin:$PATH
     export HOME=$TEST_DIR/home
     export XDG_RUNTIME_DIR=$TEST_DIR/run
     export XDG_CONFIG_HOME=$TEST_DIR/config
@@ -689,6 +753,27 @@ command -v tmux > /dev/null || die "tmux is not installed"
 trap cleanup EXIT
 unset HUNCH_HOST_SERVED TMUX
 (cd "$ROOT" && cargo build -q) || die "Can't build hunch-host"
+mkdir "$DIR/bin"
+ln -s "$HOST" "$DIR/bin/hunch-host"
+# ssh, as far as the tests need it: runs the command on a host under
+# $HOSTS, with that host's service
+cat > "$DIR/bin/ssh" << 'EOF'
+#!/usr/bin/env bash
+while [ "$1" == -o ]; do
+  shift 2
+done
+if [ ! -d "$HOSTS/$1" ]; then
+  echo "ssh: Could not resolve hostname $1" >&2
+  exit 255
+fi
+export HOME=$HOSTS/$1/home
+export XDG_RUNTIME_DIR=$HOSTS/$1/run
+export XDG_CONFIG_HOME=$HOSTS/$1/config
+export XDG_STATE_HOME=$HOSTS/$1/state
+shift
+exec sh -c "$*"
+EOF
+chmod +x "$DIR/bin/ssh"
 
 TESTS=("$@")
 [ $# -gt 0 ] || TESTS=($(declare -F | cut -d' ' -f3 | grep '^test_'))

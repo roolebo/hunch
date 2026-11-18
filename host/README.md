@@ -52,6 +52,12 @@ JSON object, its length before it in 4 bytes of native byte order:
 - `{"focus": true}` says the human switched to this browser: commands
   go to the browser used last
 
+A seat links to each host its config allows (see
+[SEAT.md](../skills/hunch/SEAT.md)) by `ssh HOST hunch-host link`. So
+on HOST, the service runs and hunch-host is on the PATH ssh gives a
+command; and ssh logs in without asking anything, as with a key the
+agent holds.
+
 Each role is a Cargo feature, all on by default; a build can leave out
 the ones a host doesn't need, e.g. `cargo build --no-default-features
 --features wm`.

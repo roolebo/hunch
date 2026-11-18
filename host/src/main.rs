@@ -5,7 +5,11 @@
 mod browser;
 #[cfg(feature = "compute")]
 mod compute;
+#[cfg(all(unix, feature = "browser"))]
+mod config;
 mod error;
+#[cfg(all(unix, feature = "browser"))]
+mod link;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
 #[cfg(all(feature = "seat", target_os = "macos"))]
@@ -21,6 +25,8 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 Usage: hunch-host ROLE [ADDR] COMMAND [ARGUMENTS]
        hunch-host wms
+       hunch-host seats
+       hunch-host link
        hunch-host needs [--ask] [--all]
        hunch-host serve
 
@@ -32,6 +38,8 @@ Roles:
 
 hunch-host ROLE --help lists the commands of ROLE.
 wms prints the window managers not inside another one.
+seats prints the seats linked to this host, and its own.
+link takes a seat's link, on stdin and stdout; the seat runs it by ssh.
 needs prints what the human has yet to grant the service; --ask has the
 OS ask the human for it, where the OS can; --all lists every grant, each
 with whether it's granted.
@@ -86,6 +94,11 @@ fn here(args: &[String]) -> Option<service::Here> {
         // In the service, which holds the extensions' connections
         #[cfg(feature = "browser")]
         Some("browser") => Some(browser::run),
+        // In the service, which holds the links
+        #[cfg(feature = "browser")]
+        Some("link") => Some(link::run_link),
+        #[cfg(feature = "browser")]
+        Some("seats") => Some(link::run_seats),
         // In the service, which keeps the model loaded between runs
         #[cfg(feature = "compute")]
         Some("compute") => Some(|args, input, out, _| compute::run(args, input, out)),
@@ -98,6 +111,8 @@ fn here(args: &[String]) -> Option<service::Here> {
 fn start() {
     #[cfg(all(feature = "seat", target_os = "macos"))]
     seat::start();
+    #[cfg(feature = "browser")]
+    link::start();
 }
 
 fn wms() -> Vec<&'static str> {
