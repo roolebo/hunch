@@ -31,8 +31,8 @@ Terms:
                 human releases the key; or HOST ADDR WINDOW, a window of a
                 wm (see WM.md)
     KEY         the dictation key, a modifier that types nothing alone:
-                right-command, right-option, right-control, right-shift
-                or fn
+                right-super, right-alt, right-control, right-shift or
+                fn; on a Mac, super is command and alt is option
     MINUTES     a whole number of minutes
     TEXT        text, passed on stdin
 
@@ -85,7 +85,7 @@ Commands:
   "loading": false,
   "compute": "localhost local:",
   "model": "handy-computer/parakeet-tdt-0.6b-v3-gguf",
-  "target": "focus", "key": "right-command", "submit": true,
+  "target": "focus", "key": "right-super", "submit": true,
   "preload": true, "warm": null, "error": null
 }
 ```
