@@ -476,14 +476,16 @@ class Indicator extends PanelMenu.Button {
     /// Asks hunch-host what the menu shows, all at once, since another
     /// host's models come over ssh
     async _refresh() {
-        const host = this._seat?.compute.split(' ')[0] ?? LOCALHOST;
-        const [status, allow, models, browser] = await Promise.all([
+        // None until the human picks one, on a host without a compute
+        const host = this._seat?.compute?.split(' ')[0] ?? null;
+        const [status, roles, allow, models, browser] = await Promise.all([
             this._status(),
+            hunchHost(['roles']).then(JSON.parse, () => []),
             micAllow(),
-            hunchHost(['compute', LOCAL, 'models'], {host}).then(JSON.parse, e => e),
+            host && hunchHost(['compute', LOCAL, 'models'], {host}).then(JSON.parse, e => e),
             hunchHost(['browser', 'status']).then(JSON.parse, () => null),
         ]);
-        this._data = {status, allow, host, models, browser};
+        this._data = {status, roles, allow, host, models, browser};
         this._build();
     }
 
@@ -499,10 +501,15 @@ class Indicator extends PanelMenu.Button {
                 St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
             });
             // Where the speech goes, among the hosts the human allowed
-            const computes = [LOCALHOST, ...data.allow].map(h => [`${h} ${LOCAL}`, hostName(h)]);
-            this._choices(`Speech to ${hostName(data.host)}`, computes, seat.compute,
-                compute => hunchHost(['seat', 'compute', ...compute.split(' ')]));
-            this._model(seat, data.host, data.models);
+            const hosts = data.roles.includes('compute') ? [LOCALHOST, ...data.allow] : data.allow;
+            const computes = hosts.map(h => [`${h} ${LOCAL}`, hostName(h)]);
+            if (hosts.length === 0)
+                this._item(this.menu, 'Speech goes nowhere: allow a host in Settings…');
+            else
+                this._choices(data.host ? `Speech to ${hostName(data.host)}` : 'Speech to…', computes,
+                    seat.compute, compute => hunchHost(['seat', 'compute', ...compute.split(' ')]));
+            if (data.host)
+                this._model(seat, data.host, data.models);
             if (seat.target === 'focus') {
                 this._item(this.menu, 'Redirect to Window…', async () => {
                     const window = await this._desktop.pick();
