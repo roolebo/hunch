@@ -550,6 +550,17 @@ test_seat_errors() {
   check_has err "$ERR" "nothing dictated"
 }
 
+test_seat_devices() {
+  seat devices
+  check status "$STATUS" 0
+  # A runner without a microphone lists none
+  [ "$(jq length <<< "$OUT")" -gt 0 ] || return 0
+  check kinds "$(jq -c '[.[].kind] | unique' <<< "$OUT")" '["mic"]'
+  check fields "$(jq -c '.[0] | keys' <<< "$OUT")" \
+    '["allow","id","in_use","kind","name","signal"]'
+  check one "$(jq '[.[] | select(.in_use)] | length' <<< "$OUT")" 1
+}
+
 test_seat_compute_elsewhere() {
   local mic
   macos || return 0

@@ -90,6 +90,17 @@ impl Peer {
 
     /// Runs command with args, and input if it takes TEXT, in the peer
     pub fn ask(&self, command: &str, args: &[&str], input: Option<&str>) -> Result<Value> {
+        self.ask_for(REPLY_WAIT, command, args, input)
+    }
+
+    /// As ask, waiting up to wait, as for the human to pick a window
+    pub fn ask_for(
+        &self,
+        wait: Duration,
+        command: &str,
+        args: &[&str],
+        input: Option<&str>,
+    ) -> Result<Value> {
         let name = &self.name;
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let (reply, replied) = mpsc::channel();
@@ -102,7 +113,7 @@ impl Peer {
             self.waiting().remove(&id);
             return Err(failed(format!("can't reach {name}: {e}")));
         }
-        match replied.recv_timeout(REPLY_WAIT) {
+        match replied.recv_timeout(wait) {
             Ok(Ok(result)) => Ok(result),
             // The exit statuses of the protocols, as the peer gave them
             Ok(Err((error, status))) => {
@@ -118,7 +129,7 @@ impl Peer {
                 self.waiting().remove(&id);
                 Err(failed(format!(
                     "{name} didn't answer in {} s",
-                    REPLY_WAIT.as_secs()
+                    wait.as_secs()
                 )))
             }
         }

@@ -31,6 +31,7 @@ Usage: hunch-host seat COMMAND [ARGUMENTS]
 
 Commands:
   context               The seat's state, as JSON
+  devices               The microphones, as JSON
   last                  The last transcription, kept in memory only
   watch                 The state again each time it changes, a line each
   model MODEL           Transcribe with MODEL
@@ -631,6 +632,24 @@ pub fn run(args: &[String], _input: &mut File, out: &mut File, gone: &AtomicBool
             .clone()
             .ok_or_else(|| failed("nothing dictated since the service started"))?,
         ["watch"] => return watch(out, gone),
+        ["devices"] => {
+            let mics: Vec<Value> = audio::mics()
+                .map_err(failed)?
+                .into_iter()
+                .map(|mic| {
+                    json!({
+                        "allow": config::device_allow(&mic.id),
+                        "id": mic.id,
+                        "kind": "mic",
+                        "name": mic.name,
+                        "in_use": mic.in_use,
+                        // The seat doesn't watch the signal yet
+                        "signal": null,
+                    })
+                })
+                .collect();
+            Value::from(mics).to_string()
+        }
         ["model", model] => {
             // Not under the lock: a compute elsewhere answers over ssh
             let compute = lock().settings.compute.clone();

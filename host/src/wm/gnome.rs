@@ -9,8 +9,11 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub const ADDR: &str = "gnome:";
+/// How long the human has to pick a window
+const PICK_WAIT: Duration = Duration::from_secs(300);
 
 /// The extension's connection, while it's connected
 static SHELL: Mutex<Option<Arc<Peer>>> = Mutex::new(None);
@@ -157,7 +160,7 @@ impl Wm for Gnome {
     }
 
     fn pick(&self) -> Result<String> {
-        let picked = shell()?.ask("pick", &[], None)?;
+        let picked = shell()?.ask_for(PICK_WAIT, "pick", &[], None)?;
         text(&picked).ok_or_else(|| failed(format!("GNOME Shell picked {picked}, not a window")))
     }
 }

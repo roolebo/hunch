@@ -59,6 +59,35 @@ fn record(samples: Arc<Mutex<Vec<f32>>>) -> Result<(cpal::Stream, u32), String> 
     Ok((stream, config.sample_rate()))
 }
 
+/// A microphone, as devices lists it
+pub struct Mic {
+    pub id: String,
+    pub name: String,
+    pub in_use: bool,
+}
+
+/// The microphones the OS has; the default one is the one in use
+pub fn mics() -> Result<Vec<Mic>, String> {
+    let host = cpal::default_host();
+    let default = mic().ok();
+    let devices = host
+        .input_devices()
+        .map_err(|e| format!("can't list the microphones: {e}"))?;
+    Ok(devices
+        .filter_map(|device| {
+            let id = device.id().ok()?.id().to_string();
+            let name = device
+                .description()
+                .map_or_else(|_| id.clone(), |d| d.name().to_string());
+            Some(Mic {
+                in_use: default.as_ref() == Some(&id),
+                id,
+                name,
+            })
+        })
+        .collect())
+}
+
 /// The default microphone's DEVICE, as the seat's config names it
 pub fn mic() -> Result<String, String> {
     let device = cpal::default_host()
