@@ -12,7 +12,10 @@ mod error;
 mod link;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
-#[cfg(all(unix, feature = "browser"))]
+#[cfg(all(
+    unix,
+    any(feature = "browser", all(feature = "wm", target_os = "linux"))
+))]
 mod peer;
 #[cfg(all(feature = "seat", target_os = "macos"))]
 mod seat;
@@ -71,7 +74,9 @@ fn run(args: &[String]) -> Result<()> {
             println!("{}", browser::USAGE)
         }
         #[cfg(feature = "wm")]
-        [role, rest @ ..] if role == "wm" => wm::run(rest)?,
+        [role, rest @ ..] if role == "wm" => {
+            wm::run(rest, &mut std::io::stdin(), &mut std::io::stdout())?
+        }
         #[cfg(feature = "compute")]
         [role, rest @ ..] if role == "compute" => {
             let ran = compute::run(rest, &mut std::io::stdin(), &mut std::io::stdout());
@@ -98,6 +103,15 @@ fn here(args: &[String]) -> Option<service::Here> {
         // In the service, which holds the extensions' connections
         #[cfg(feature = "browser")]
         Some("browser") => Some(browser::run),
+        // In the service, which holds the Shell extension's connection
+        #[cfg(all(feature = "wm", target_os = "linux"))]
+        Some("wm") if args.get(1).is_some_and(|a| a == wm::gnome::ADDR) => Some(wm::run_here),
+        // In the service, which knows the wms connected to it
+        Some("wms") if args.len() == 1 => Some(|_, _, out, _| {
+            use std::io::Write;
+            writeln!(out, "{}", serde_json::json!(wms()))
+                .map_err(|e| error::failed(format!("can't answer: {e}")))
+        }),
         // In the service, which holds the links
         #[cfg(feature = "browser")]
         Some("link") => Some(link::run_link),
@@ -120,11 +134,14 @@ fn start() {
 }
 
 fn wms() -> Vec<&'static str> {
-    if cfg!(all(feature = "wm", target_os = "macos")) {
-        vec!["macos:"]
-    } else {
-        vec![]
-    }
+    [
+        cfg!(all(feature = "wm", target_os = "macos")).then_some("macos:"),
+        #[cfg(all(feature = "wm", target_os = "linux"))]
+        wm::gnome::connected().then_some(wm::gnome::ADDR),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Whether the command runs in this process rather than in the service:

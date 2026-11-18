@@ -1,12 +1,14 @@
 //! The window manager role; skills/hunch/WM.md specifies it.
 
+#[cfg(target_os = "linux")]
+pub mod gnome;
 #[cfg(target_os = "macos")]
 mod macos;
 mod tmux;
 
 use crate::error::{Error, Result, failed};
 use serde_json::{Value, json};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::str::FromStr;
 
 const USAGE: &str = "\
@@ -230,6 +232,8 @@ pub fn open(addr: &str) -> Result<Box<dyn Wm>> {
         "tmux" => Ok(Box::new(tmux::Tmux::new(location))),
         #[cfg(target_os = "macos")]
         "macos" => Ok(Box::new(macos::Macos)),
+        #[cfg(target_os = "linux")]
+        "gnome" => Ok(Box::new(gnome::Gnome)),
         _ => Err(failed(format!("this build has no wm of SCHEME {scheme}"))),
     }
 }
@@ -270,53 +274,54 @@ fn number(s: &str) -> Result<f64> {
         .map_err(|_| Error::Usage(format!("not a number: {s}"), USAGE))
 }
 
-pub fn run(args: &[String]) -> Result<()> {
+/// Runs a wm command on input and out: stdin and stdout, or a client's in
+/// the service
+pub fn run(args: &[String], input: &mut dyn Read, out: &mut dyn Write) -> Result<()> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let (addr, command, rest) = match args.as_slice() {
         ["-h" | "--help", ..] => {
-            println!("{USAGE}");
-            return Ok(());
+            return writeln!(out, "{USAGE}").map_err(|e| failed(format!("can't answer: {e}")));
         }
         [addr, command, rest @ ..] => (*addr, *command, rest),
         _ => return Err(Error::Usage("missing ADDR or COMMAND".into(), USAGE)),
     };
     let wm = open(addr)?;
-    match (command, rest) {
-        ("context", []) => println!("{}", wm.context(None)?.to_json()),
-        ("context", ["--client", tty]) => println!("{}", wm.context(Some(tty))?.to_json()),
+    let said = match (command, rest) {
+        ("context", []) => wm.context(None)?.to_json().to_string(),
+        ("context", ["--client", tty]) => wm.context(Some(tty))?.to_json().to_string(),
         ("displays", []) => {
             let displays: Vec<Value> = wm.displays()?.iter().map(Display::to_json).collect();
-            println!("{}", Value::from(displays));
+            Value::from(displays).to_string()
         }
         ("windows", []) => {
             let windows: Vec<Value> = wm.windows()?.iter().map(Window::full).collect();
-            println!("{}", Value::from(windows));
+            Value::from(windows).to_string()
         }
         ("send", [window]) => {
             let mut text = String::new();
-            std::io::stdin()
+            input
                 .read_to_string(&mut text)
                 .map_err(|e| failed(format!("can't read TEXT from stdin: {e}")))?;
             wm.send(window, &text)?;
-            println!("sent to {window}");
+            format!("sent to {window}")
         }
         ("submit", [window]) => {
             wm.submit(window)?;
-            println!("submitted in {window}");
+            format!("submitted in {window}")
         }
         ("focus", [window]) => {
             wm.focus(window)?;
-            println!("focused {window}");
+            format!("focused {window}")
         }
         ("swap", [a, b]) => {
             wm.swap(a, b)?;
-            println!("swapped {a} and {b}");
+            format!("swapped {a} and {b}")
         }
         ("move", [window, direction]) => {
             let windows = wm.windows()?;
             let other = neighbor(&windows, window, direction.parse()?)?;
             wm.swap(window, &other.id)?;
-            println!("swapped {window} and {}", other.id);
+            format!("swapped {window} and {}", other.id)
         }
         ("place", [window, x, y, width, height]) => {
             let frame = Frame {
@@ -326,21 +331,36 @@ pub fn run(args: &[String]) -> Result<()> {
                 height: number(height)?,
             };
             wm.place(window, frame)?;
-            println!("placed {window}");
+            format!("placed {window}")
         }
         ("state", [window, state]) => {
             wm.state(window, state.parse()?)?;
-            println!("{window} is {state}");
+            format!("{window} is {state}")
         }
-        ("pick", []) => println!("{}", wm.pick()?),
+        ("pick", []) => wm.pick()?,
         _ => {
             return Err(Error::Usage(
                 format!("unknown command or wrong arguments: {command}"),
                 USAGE,
             ));
         }
+    };
+    writeln!(out, "{said}").map_err(|e| failed(format!("can't answer: {e}")))
+}
+
+/// Runs a command of gnome: in the service, which holds the extension's
+/// connection; connect is what the extension runs to make it
+#[cfg(target_os = "linux")]
+pub fn run_here(
+    args: &[String],
+    input: &mut std::fs::File,
+    out: &mut std::fs::File,
+    _: &std::sync::atomic::AtomicBool,
+) -> Result<()> {
+    if args.get(1).is_some_and(|a| a == "connect") && args.len() == 2 {
+        return gnome::connect(input, out);
     }
-    Ok(())
+    run(args, input, out)
 }
 
 #[cfg(test)]
