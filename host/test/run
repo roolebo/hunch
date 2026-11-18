@@ -841,7 +841,9 @@ export XDG_RUNTIME_DIR=$HOSTS/$1/run
 export XDG_CONFIG_HOME=$HOSTS/$1/config
 export XDG_STATE_HOME=$HOSTS/$1/state
 shift
-exec sh -c "$*"
+# bash, unlike dash, runs the last command in its place, so a test that
+# kills ssh kills what it ran
+exec bash -c "$*"
 EOF
 chmod +x "$DIR/bin/ssh"
 
