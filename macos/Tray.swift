@@ -116,6 +116,41 @@ struct SeatState: Decodable {
 struct BrowserStatus: Decodable {
     let browsers: [String]
     let serves: String
+    let allow: [String]
+}
+
+/// The seat's config, which only the human writes, here through the app;
+/// SEAT.md specifies it
+enum SeatConfig {
+    static var url: URL {
+        let config = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        return config.appendingPathComponent("hunch/seat.json")
+    }
+
+    /// The config, empty if there's none; it throws rather than let a
+    /// write replace a file it can't read
+    static func read() throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        guard let config = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
+            throw Failure(message: "\(url.path) isn't a JSON object")
+        }
+        return config
+    }
+
+    static func browserAllow() throws -> [String] {
+        (try read()["browser"] as? [String: Any])?["allow"] as? [String] ?? []
+    }
+
+    static func setBrowserAllow(_ hosts: [String]) throws {
+        var config = try read()
+        var browser = config["browser"] as? [String: Any] ?? [:]
+        browser["allow"] = hosts
+        config["browser"] = browser
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            .write(to: url, options: .atomic)
+    }
 }
 
 /// A HOST as the human calls it
@@ -157,6 +192,8 @@ final class Settings: ObservableObject {
     @Published var error: String?
     @Published var models: [Model] = []
     @Published var seat: SeatState?
+    /// The hosts the browser's pages may go to
+    @Published var browserAllow: [String] = []
     @Published var inDock = UserDefaults.standard.bool(forKey: showInDockKey)
 
     var missing: Bool { grants.contains { !$0.allowed } }
@@ -170,6 +207,20 @@ final class Settings: ObservableObject {
             error = failure.message
         }
         models = decode([Model].self, ["compute", "local:", "models"]) ?? []
+        do {
+            browserAllow = try SeatConfig.browserAllow()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func setBrowserAllow(_ hosts: [String]) {
+        do {
+            try SeatConfig.setBrowserAllow(hosts)
+            browserAllow = hosts
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     func seatChanged(_ state: SeatState) {
@@ -291,18 +342,21 @@ struct KeyRow: View {
 }
 
 struct SettingsView: View {
-    enum Tab {
-        case general, permissions, dictation, hotkeys, about
+    enum Tab: CaseIterable {
+        case general, permissions, dictation, browser, hotkeys, about
     }
 
     @ObservedObject var settings: Settings
     let tab: Tab
+    /// The host the human types in to allow
+    @State var host = ""
 
     var body: some View {
         switch tab {
         case .general: general
         case .permissions: permissions
         case .dictation: dictation
+        case .browser: browser
         case .hotkeys: hotkeys
         case .about: about
         }
@@ -386,6 +440,41 @@ struct SettingsView: View {
         }
     }
 
+    var browser: some View {
+        page {
+            SwiftUI.Section {
+                ForEach(settings.browserAllow, id: \.self) { allowed in
+                    LabeledContent(allowed) {
+                        Button("Remove") { settings.setBrowserAllow(settings.browserAllow.filter { $0 != allowed }) }
+                    }
+                }
+                HStack {
+                    TextField("Host", text: $host, prompt: Text("as you ssh to it"))
+                        .onSubmit(allow)
+                    Button("Allow", action: allow).disabled(!allowable)
+                }
+            } header: {
+                Text("Pages may go to")
+            } footer: {
+                Text("Pages go to one host at a time, the one you pick in the menu; Hunch reaches it by ssh, as you do.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// ssh would take a host that starts with - for an option
+    var allowable: Bool {
+        let typed = host.trimmingCharacters(in: .whitespaces)
+        return !typed.isEmpty && !typed.hasPrefix("-") && !typed.contains(" ")
+            && typed != "localhost" && !settings.browserAllow.contains(typed)
+    }
+
+    func allow() {
+        guard allowable else { return }
+        settings.setBrowserAllow(settings.browserAllow + [host.trimmingCharacters(in: .whitespaces)])
+        host = ""
+    }
+
     var hotkeys: some View {
         page {
             KeyRow(settings: settings)
@@ -436,6 +525,7 @@ struct SettingsView: View {
             ("General", "gearshape", .general),
             ("Permissions", "lock.shield", .permissions),
             ("Dictation", "waveform", .dictation),
+            ("Browser", "globe", .browser),
             ("Hotkeys", "keyboard", .hotkeys),
             ("About", "info.circle", .about),
         ]
@@ -831,8 +921,11 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
         return window
     }
 
-    func showSettings() {
+    func showSettings(_ tab: SettingsView.Tab? = nil) {
         settingsWindow = show("Settings", settingsWindow) { SettingsView.tabs(settings) }
+        if let tab, let tabs = settingsWindow?.contentViewController as? NSTabViewController {
+            tabs.selectedTabViewItemIndex = SettingsView.Tab.allCases.firstIndex(of: tab) ?? 0
+        }
     }
 
     func showPermissions() {
@@ -917,6 +1010,19 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
                 ? add(menu, "No browser connected")
                 : add(menu, browser.browsers.joined(separator: ", ") + " · pages to " + hostName(browser.serves))
             pages.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Browser")
+            // Only the hosts the human allowed, as SEAT.md says
+            let hosts = NSMenu()
+            for host in ["localhost"] + browser.allow {
+                let item = add(hosts, hostName(host)) {
+                    if case .failure(let failure) = hunchHost(["browser", "serve", host]) {
+                        self.showError(failure.message)
+                    }
+                }
+                item.state = host == browser.serves ? .on : .off
+            }
+            hosts.addItem(.separator())
+            add(hosts, "Allowed Hosts…") { self.showSettings(.browser) }
+            pages.submenu = hosts
             if browser.browsers.isEmpty {
                 add(menu, "Install for Firefox") {
                     if case .failure(let failure) = hunchHost(["browser", "install", "firefox"]) {
