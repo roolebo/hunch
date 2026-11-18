@@ -561,7 +561,7 @@ extension() {
   local message
   local id
   frame "{\"hello\": {\"name\": \"$1\"}}"
-  while message=$(receive); [ -n "$message" ]; do
+  while message=$(receive) && [ -n "$message" ]; do
     id=$(jq .id <<< "$message")
     case $(jq -r '.command + " " + (.args | join(" "))' <<< "$message") in
       "context ") frame "{\"id\": $id, \"result\": {\"tab\": 7, \"title\": \"$1\", \"selection\": null}}" ;;
