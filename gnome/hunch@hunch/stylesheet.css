@@ -1,0 +1,9 @@
+/* While the microphone records, as SEAT.md asks the seat to show */
+.hunch-recording {
+  color: #e01b24;
+}
+
+/* While the microphone opens, the model loads or the speech becomes text */
+.hunch-busy {
+  color: #f6d32d;
+}

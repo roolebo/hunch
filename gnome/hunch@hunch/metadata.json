@@ -1,0 +1,7 @@
+{
+  "uuid": "hunch@hunch",
+  "name": "hunch",
+  "description": "Serves GNOME's desktop to hunch, and shows the seat's dictation in the top bar.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/roolebo/hunch"
+}
