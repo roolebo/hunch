@@ -308,7 +308,7 @@ final class Settings: ObservableObject {
 /// A TARGET as the human knows the window: its app and title
 func describe(_ target: String) -> String {
     if target == "focus" {
-        return "Focused window"
+        return "Focused Window"
     }
     let id = target.split(separator: " ").last.map(String.init)
     guard let window = (decode([WindowInfo].self, ["wm", "macos:", "windows"]) ?? []).first(where: { $0.id == id })
@@ -462,7 +462,7 @@ struct AllowSection: View {
 
 struct SettingsView: View {
     enum Tab: CaseIterable {
-        case general, permissions, dictation, browser, hotkeys, about
+        case general, dictation, hosts, permissions, about
     }
 
     @ObservedObject var settings: Settings
@@ -471,10 +471,9 @@ struct SettingsView: View {
     var body: some View {
         switch tab {
         case .general: general
-        case .permissions: permissions
         case .dictation: dictation
-        case .browser: browser
-        case .hotkeys: hotkeys
+        case .hosts: hosts
+        case .permissions: permissions
         case .about: about
         }
     }
@@ -507,18 +506,14 @@ struct SettingsView: View {
     var dictation: some View {
         page {
             SwiftUI.Section {
-                Picker("Model", selection: Binding(get: { settings.seat?.model ?? "" }, set: seat("model"))) {
-                    if settings.seat?.model == nil {
-                        Text("None").tag("")
-                    }
-                    ForEach(settings.models) { model in
-                        Text(
-                            [model.name ?? model.id, ByteCountFormatter.string(fromByteCount: model.size, countStyle: .file)]
-                                .joined(separator: " · ") + (model.loaded ? " · loaded" : "")
-                        )
-                        .tag(model.id)
-                    }
-                }
+                KeyRow(settings: settings)
+                Toggle(
+                    "Press Enter after the text",
+                    isOn: Binding(
+                        get: { settings.seat?.submit ?? true },
+                        set: { seat("submit")($0 ? "on" : "off") }
+                    )
+                )
                 Toggle(
                     "Load the model at start",
                     isOn: Binding(
@@ -543,48 +538,28 @@ struct SettingsView: View {
                     Text("Always").tag("always")
                 }
                 .help("How long the model stays in GPU memory while you don't dictate; after that, the next dictation waits a moment")
-                Toggle(
-                    "Press Enter after the text",
-                    isOn: Binding(
-                        get: { settings.seat?.submit ?? true },
-                        set: { seat("submit")($0 ? "on" : "off") }
-                    )
-                )
             } footer: {
-                Text(speechGoes).foregroundStyle(.secondary)
+                Text("Hold the key and speak; Escape cancels.").foregroundStyle(.secondary)
             }
+        }
+    }
+
+    var hosts: some View {
+        page {
             if let mic = settings.mic {
                 AllowSection(
-                    title: "Speech may go to",
-                    footer: "Of \(mic.name), to transcribe it there, once you pick the host in the menu; Hunch reaches it by ssh, as you do.",
+                    title: "Transcribe on",
+                    footer: "The hosts that may turn what \(mic.name) hears into text.",
                     hosts: settings.micAllow
                 ) { settings.setAllow(["devices", mic.id], $0) }
             }
-        }
-    }
-
-    var speechGoes: String {
-        switch settings.seat?.compute.map(split)?.host {
-        case "localhost": "Speech turns into text on this Mac; nothing leaves it."
-        case let host?: "Speech goes to \(host), which turns it into text."
-        case nil: "Pick where speech goes in the menu."
-        }
-    }
-
-    var browser: some View {
-        page {
             AllowSection(
-                title: "Pages may go to",
-                footer: "Pages go to one host at a time, the one you pick in the menu; Hunch reaches it by ssh, as you do.",
+                title: "Browser used by",
+                footer: "The hosts whose agents may read and act on the browser's pages.",
                 hosts: settings.browserAllow
             ) { settings.setAllow(["browser"], $0) }
-        }
-    }
-
-    var hotkeys: some View {
-        page {
-            KeyRow(settings: settings)
-            LabeledContent("Cancel", value: "Esc")
+            Text("A host here is one you reach by ssh HOST without a password, and that runs hunch-host. Data goes to one host at a time, the one you pick in the menu.")
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -629,10 +604,9 @@ struct SettingsView: View {
         tabs.canPropagateSelectedChildViewControllerTitle = false
         let pages: [(String, String, Tab)] = [
             ("General", "gearshape", .general),
-            ("Permissions", "lock.shield", .permissions),
             ("Dictation", "waveform", .dictation),
-            ("Browser", "globe", .browser),
-            ("Hotkeys", "keyboard", .hotkeys),
+            ("Hosts", "network", .hosts),
+            ("Permissions", "lock.shield", .permissions),
             ("About", "info.circle", .about),
         ]
         for (title, symbol, tab) in pages {
@@ -1086,45 +1060,16 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
                 }
             }
             settings.refreshHosts()
-            speech(menu, seat)
+            transcribe(menu, seat)
             if let compute = seat.compute.map(split) {
                 model(menu, seat, compute)
             }
-            // One item, as Handy has it: redirect, or stop the redirect
-            if seat.target == "focus" {
-                add(menu, "Redirect to Window…") { self.pickWindow() }
-            } else {
-                add(menu, "Stop Redirect to \(describe(seat.target))") { _ = hunchHost(["seat", "target", "focus"]) }
-            }
+            type(menu, seat)
         }
         if let browser = decode(BrowserStatus.self, ["browser", "status"]) {
             menu.addItem(.separator())
             header(menu, "Browser")
-            // What goes where, as for dictation
-            let pages = browser.browsers.isEmpty
-                ? add(menu, "No browser connected")
-                : add(menu, browser.browsers.joined(separator: ", ") + " · pages to " + hostName(browser.serves))
-            pages.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Browser")
-            // Only the hosts the human allowed, as SEAT.md says
-            let hosts = NSMenu()
-            for host in ["localhost"] + browser.allow {
-                let item = add(hosts, hostName(host)) {
-                    if case .failure(let failure) = hunchHost(["browser", "serve", host]) {
-                        self.showError(failure.message)
-                    }
-                }
-                item.state = host == browser.serves ? .on : .off
-            }
-            hosts.addItem(.separator())
-            add(hosts, "Allowed Hosts…") { self.showSettings(.browser) }
-            pages.submenu = hosts
-            if browser.browsers.isEmpty {
-                add(menu, "Install for Firefox") {
-                    if case .failure(let failure) = hunchHost(["browser", "install", "firefox"]) {
-                        self.showError(failure.message)
-                    }
-                }
-            }
+            self.browser(menu, browser)
         }
         menu.addItem(.separator())
         add(menu, "Settings…", key: ",") { self.showSettings() }
@@ -1132,24 +1077,34 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
         add(menu, "Quit", key: "q") { NSApp.terminate(nil) }
     }
 
-    /// Where the speech goes, among the hosts the human allowed
-    func speech(_ menu: NSMenu, _ seat: SeatState) {
-        let chosen = seat.compute.map(split)?.host
-        let hosts = (settings.roles.contains("compute") ? ["localhost"] : []) + settings.micAllow
-        let speech = add(menu, chosen.map { "Speech to " + hostName($0) } ?? "Speech to…")
-        speech.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Speech")
-        let computes = NSMenu()
+    /// A submenu of HOSTS, CHOSEN checked, ending with where the human
+    /// allows them
+    func hostChoices(_ hosts: [String], _ chosen: String?, _ choose: @escaping (String) -> Result<Data, Failure>) -> NSMenu {
+        let menu = NSMenu()
         for host in hosts {
-            let item = add(computes, hostName(host)) {
-                if case .failure(let failure) = hunchHost(["seat", "compute", host, "local:"]) {
+            let item = add(menu, hostName(host)) {
+                if case .failure(let failure) = choose(host) {
                     self.showError(failure.message)
                 }
             }
             item.state = host == chosen ? .on : .off
         }
-        computes.addItem(.separator())
-        add(computes, "Allowed Hosts…") { self.showSettings(.dictation) }
-        speech.submenu = computes
+        menu.addItem(.separator())
+        add(menu, "Allow Hosts…") { self.showSettings(.hosts) }
+        return menu
+    }
+
+    /// Where the speech goes, among the hosts the human allowed
+    func transcribe(_ menu: NSMenu, _ seat: SeatState) {
+        let hosts = (settings.roles.contains("compute") ? ["localhost"] : []) + settings.micAllow
+        guard !hosts.isEmpty else {
+            add(menu, "Allow a Host to Transcribe On…") { self.showSettings(.hosts) }
+            return
+        }
+        let chosen = seat.compute.map(split)?.host
+        let item = add(menu, "Transcribe on: " + (chosen.map(hostName) ?? "None"))
+        item.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Transcribe")
+        item.submenu = hostChoices(hosts, chosen) { hunchHost(["seat", "compute", $0, "local:"]) }
     }
 
     /// The model, on COMPUTE, as last asked: another host answers over ssh
@@ -1158,7 +1113,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
         // A loaded model takes about its file's size in memory
         let memory = seat.loading ? " · loading"
             : model?.loaded == true ? " · " + ByteCountFormatter.string(fromByteCount: model!.size, countStyle: .memory) : ""
-        let item = add(menu, (model.map { $0.name ?? $0.id } ?? "No model") + memory)
+        let item = add(menu, "Model: " + (model.map { $0.name ?? $0.id } ?? "None") + memory)
         let models = NSMenu()
         for choice in settings.models {
             let entry = add(models, choice.name ?? choice.id) {
@@ -1168,22 +1123,50 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
             }
             entry.state = choice.id == seat.model ? .on : .off
         }
-        item.submenu = models.items.isEmpty ? nil : models
-        guard let model, !seat.loading else { return }
-        let (host, addr) = compute
-        if model.loaded {
-            let eject = add(menu, "Eject") {
-                DispatchQueue.global().async {
-                    _ = hunchHost(["compute", addr, "unload"], on: host)
-                    DispatchQueue.main.async { self.settings.refreshModels() }
+        if let model, !seat.loading {
+            let (host, addr) = compute
+            models.addItem(.separator())
+            if model.loaded {
+                let eject = add(models, "Eject") {
+                    DispatchQueue.global().async {
+                        _ = hunchHost(["compute", addr, "unload"], on: host)
+                        DispatchQueue.main.async { self.settings.refreshModels() }
+                    }
+                }
+                eject.image = NSImage(systemSymbolName: "eject", accessibilityDescription: "Eject")
+            } else {
+                add(models, "Load") {
+                    DispatchQueue.global().async { _ = hunchHost(["compute", addr, "load", model.id], on: host) }
                 }
             }
-            eject.image = NSImage(systemSymbolName: "eject", accessibilityDescription: "Eject")
-        } else {
-            add(menu, "Load") {
-                DispatchQueue.global().async { _ = hunchHost(["compute", addr, "load", model.id], on: host) }
-            }
         }
+        item.submenu = models.items.isEmpty ? nil : models
+    }
+
+    /// Where the text goes: the focused window, or one the human picks
+    func type(_ menu: NSMenu, _ seat: SeatState) {
+        let item = add(menu, "Type into: " + describe(seat.target))
+        let targets = NSMenu()
+        add(targets, "Focused Window") { _ = hunchHost(["seat", "target", "focus"]) }.state =
+            seat.target == "focus" ? .on : .off
+        add(targets, "Pick a Window…") { self.pickWindow() }
+        item.submenu = targets
+    }
+
+    func browser(_ menu: NSMenu, _ browser: BrowserStatus) {
+        guard !browser.browsers.isEmpty else {
+            add(menu, "No browser connected").image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Browser")
+            add(menu, "Install for Firefox") {
+                if case .failure(let failure) = hunchHost(["browser", "install", "firefox"]) {
+                    self.showError(failure.message)
+                }
+            }
+            return
+        }
+        let item = add(menu, browser.browsers.joined(separator: ", ") + " · used by: " + hostName(browser.serves))
+        item.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Browser")
+        // Only the hosts the human allowed, as SEAT.md says
+        item.submenu = hostChoices(["localhost"] + browser.allow, browser.serves) { hunchHost(["browser", "serve", $0]) }
     }
 
     /// The app's own menu, never shown in the menu bar while it has no
