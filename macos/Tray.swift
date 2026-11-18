@@ -18,11 +18,16 @@ let cancelled: Int32 = 5
 
 let hostURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/hunch-host")
 
-/// Runs the hunch-host next to this app
-func hunchHost(_ arguments: [String]) -> Result<Data, Failure> {
+/// Runs the hunch-host next to this app, or HOST's over ssh
+func hunchHost(_ arguments: [String], on host: String = "localhost") -> Result<Data, Failure> {
     let process = Process()
-    process.executableURL = hostURL
-    process.arguments = arguments
+    if host == "localhost" {
+        process.executableURL = hostURL
+        process.arguments = arguments
+    } else {
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        process.arguments = ["-o", "BatchMode=yes", host, "hunch-host"] + arguments
+    }
     let out = Pipe()
     let err = Pipe()
     process.standardOutput = out
@@ -43,8 +48,8 @@ func hunchHost(_ arguments: [String]) -> Result<Data, Failure> {
     return .success(data)
 }
 
-func decode<T: Decodable>(_ type: T.Type, _ arguments: [String]) -> T? {
-    guard case .success(let data) = hunchHost(arguments) else { return nil }
+func decode<T: Decodable>(_ type: T.Type, _ arguments: [String], on host: String = "localhost") -> T? {
+    guard case .success(let data) = hunchHost(arguments, on: host) else { return nil }
     return try? JSONDecoder().decode(type, from: data)
 }
 
@@ -102,6 +107,9 @@ struct SeatState: Decodable {
     let opening: Bool
     let transcribing: Bool
     let loading: Bool
+    /// COMPUTE, as HOST ADDR; nil until the human picks one, on a host
+    /// without a compute
+    let compute: String?
     let model: String?
     let target: String
     let submit: Bool
@@ -110,6 +118,25 @@ struct SeatState: Decodable {
     /// Minutes the model stays in GPU memory while idle; nil is always
     let warm: Int?
     let error: String?
+}
+
+/// COMPUTE's host and ADDR
+func split(_ compute: String) -> (host: String, addr: String) {
+    let parts = compute.split(separator: " ", maxSplits: 1).map(String.init)
+    return (parts[0], parts[1])
+}
+
+/// A device as the seat's devices prints it
+struct Device: Decodable {
+    let id: String
+    let kind: String
+    let name: String
+    let inUse: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, name
+        case inUse = "in_use"
+    }
 }
 
 /// The browser role as status prints it
@@ -138,18 +165,29 @@ enum SeatConfig {
         return config
     }
 
-    static func browserAllow() throws -> [String] {
-        (try read()["browser"] as? [String: Any])?["allow"] as? [String] ?? []
+    /// The allow of what's at PATH: ["browser"], or ["devices", DEVICE]
+    static func allow(_ path: [String]) throws -> [String] {
+        var node: Any? = try read()
+        for key in path {
+            node = (node as? [String: Any])?[key]
+        }
+        return (node as? [String: Any])?["allow"] as? [String] ?? []
     }
 
-    static func setBrowserAllow(_ hosts: [String]) throws {
-        var config = try read()
-        var browser = config["browser"] as? [String: Any] ?? [:]
-        browser["allow"] = hosts
-        config["browser"] = browser
+    static func setAllow(_ path: [String], _ hosts: [String]) throws {
+        let config = setting(try read(), path + ["allow"], to: hosts)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
             .write(to: url, options: .atomic)
+    }
+
+    /// OBJECT with VALUE at PATH, and the objects on the way where missing
+    static func setting(_ object: [String: Any], _ path: [String], to value: Any) -> [String: Any] {
+        guard let key = path.first else { return object }
+        var object = object
+        object[key] = path.count == 1 ? value
+            : setting(object[key] as? [String: Any] ?? [:], Array(path.dropFirst()), to: value)
+        return object
     }
 }
 
@@ -190,8 +228,15 @@ final class Settings: ObservableObject {
 
     @Published var grants: [Grant] = []
     @Published var error: String?
+    /// The models of the seat's compute
     @Published var models: [Model] = []
     @Published var seat: SeatState?
+    /// The roles the service serves
+    @Published var roles: [String] = []
+    /// The microphone in use
+    @Published var mic: Device?
+    /// The hosts its speech may go to
+    @Published var micAllow: [String] = []
     /// The hosts the browser's pages may go to
     @Published var browserAllow: [String] = []
     @Published var inDock = UserDefaults.standard.bool(forKey: showInDockKey)
@@ -206,25 +251,55 @@ final class Settings: ObservableObject {
         case .failure(let failure):
             error = failure.message
         }
-        models = decode([Model].self, ["compute", "local:", "models"]) ?? []
+        refreshHosts()
+    }
+
+    /// What the menu needs besides the seat: where data may go
+    func refreshHosts() {
+        roles = decode([String].self, ["roles"]) ?? []
+        mic = decode([Device].self, ["seat", "devices"])?.first { $0.kind == "mic" && $0.inUse }
         do {
-            browserAllow = try SeatConfig.browserAllow()
+            micAllow = try mic.map { try SeatConfig.allow(["devices", $0.id]) } ?? []
+            browserAllow = try SeatConfig.allow(["browser"])
         } catch {
             self.error = error.localizedDescription
+        }
+        refreshModels()
+    }
+
+    /// Asks for the models in the background, since another host's come
+    /// over ssh
+    func refreshModels() {
+        guard let compute = seat?.compute else {
+            models = []
+            return
+        }
+        let (host, addr) = split(compute)
+        DispatchQueue.global().async {
+            let models = decode([Model].self, ["compute", addr, "models"], on: host) ?? []
+            DispatchQueue.main.async {
+                if self.seat?.compute == compute {
+                    self.models = models
+                }
+            }
         }
     }
 
-    func setBrowserAllow(_ hosts: [String]) {
+    func setAllow(_ path: [String], _ hosts: [String]) {
         do {
-            try SeatConfig.setBrowserAllow(hosts)
-            browserAllow = hosts
+            try SeatConfig.setAllow(path, hosts)
         } catch {
             self.error = error.localizedDescription
         }
+        refreshHosts()
     }
 
     func seatChanged(_ state: SeatState) {
+        let changed = seat?.compute != state.compute || seat?.loading != state.loading
         seat = state
+        if changed {
+            refreshModels()
+        }
     }
 }
 
@@ -341,6 +416,48 @@ struct KeyRow: View {
     }
 }
 
+/// The hosts in an allow, which the human edits here
+struct AllowSection: View {
+    let title: String
+    let footer: String
+    let hosts: [String]
+    let set: ([String]) -> Void
+    /// The host the human types in to allow
+    @State var host = ""
+
+    var body: some View {
+        SwiftUI.Section {
+            ForEach(hosts, id: \.self) { allowed in
+                LabeledContent(allowed) {
+                    Button("Remove") { set(hosts.filter { $0 != allowed }) }
+                }
+            }
+            HStack {
+                TextField("Host", text: $host, prompt: Text("as you ssh to it"))
+                    .onSubmit(allow)
+                Button("Allow", action: allow).disabled(!allowable)
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            Text(footer).foregroundStyle(.secondary)
+        }
+    }
+
+    /// ssh would take a host that starts with - for an option
+    var allowable: Bool {
+        let typed = host.trimmingCharacters(in: .whitespaces)
+        return !typed.isEmpty && !typed.hasPrefix("-") && !typed.contains(" ")
+            && typed != "localhost" && !hosts.contains(typed)
+    }
+
+    func allow() {
+        guard allowable else { return }
+        set(hosts + [host.trimmingCharacters(in: .whitespaces)])
+        host = ""
+    }
+}
+
 struct SettingsView: View {
     enum Tab: CaseIterable {
         case general, permissions, dictation, browser, hotkeys, about
@@ -348,8 +465,6 @@ struct SettingsView: View {
 
     @ObservedObject var settings: Settings
     let tab: Tab
-    /// The host the human types in to allow
-    @State var host = ""
 
     var body: some View {
         switch tab {
@@ -434,45 +549,34 @@ struct SettingsView: View {
                     )
                 )
             } footer: {
-                Text("Speech turns into text on this Mac; nothing leaves it.")
-                    .foregroundStyle(.secondary)
+                Text(speechGoes).foregroundStyle(.secondary)
             }
+            if let mic = settings.mic {
+                AllowSection(
+                    title: "Speech may go to",
+                    footer: "Of \(mic.name), to transcribe it there, once you pick the host in the menu; Hunch reaches it by ssh, as you do.",
+                    hosts: settings.micAllow
+                ) { settings.setAllow(["devices", mic.id], $0) }
+            }
+        }
+    }
+
+    var speechGoes: String {
+        switch settings.seat?.compute.map(split)?.host {
+        case "localhost": "Speech turns into text on this Mac; nothing leaves it."
+        case let host?: "Speech goes to \(host), which turns it into text."
+        case nil: "Pick where speech goes in the menu."
         }
     }
 
     var browser: some View {
         page {
-            SwiftUI.Section {
-                ForEach(settings.browserAllow, id: \.self) { allowed in
-                    LabeledContent(allowed) {
-                        Button("Remove") { settings.setBrowserAllow(settings.browserAllow.filter { $0 != allowed }) }
-                    }
-                }
-                HStack {
-                    TextField("Host", text: $host, prompt: Text("as you ssh to it"))
-                        .onSubmit(allow)
-                    Button("Allow", action: allow).disabled(!allowable)
-                }
-            } header: {
-                Text("Pages may go to")
-            } footer: {
-                Text("Pages go to one host at a time, the one you pick in the menu; Hunch reaches it by ssh, as you do.")
-                    .foregroundStyle(.secondary)
-            }
+            AllowSection(
+                title: "Pages may go to",
+                footer: "Pages go to one host at a time, the one you pick in the menu; Hunch reaches it by ssh, as you do.",
+                hosts: settings.browserAllow
+            ) { settings.setAllow(["browser"], $0) }
         }
-    }
-
-    /// ssh would take a host that starts with - for an option
-    var allowable: Bool {
-        let typed = host.trimmingCharacters(in: .whitespaces)
-        return !typed.isEmpty && !typed.hasPrefix("-") && !typed.contains(" ")
-            && typed != "localhost" && !settings.browserAllow.contains(typed)
-    }
-
-    func allow() {
-        guard allowable else { return }
-        settings.setBrowserAllow(settings.browserAllow + [host.trimmingCharacters(in: .whitespaces)])
-        host = ""
     }
 
     var hotkeys: some View {
@@ -979,21 +1083,10 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
                     self.showError(failure.message)
                 }
             }
-            let models = decode([Model].self, ["compute", "local:", "models"]) ?? []
-            if let model = models.first(where: { $0.id == seat.model }) {
-                // A loaded model takes about its file's size in memory
-                let memory = seat.loading ? " · loading"
-                    : model.loaded ? " · " + ByteCountFormatter.string(fromByteCount: model.size, countStyle: .memory) : ""
-                add(menu, (model.name ?? model.id) + memory)
-                if seat.loading {
-                } else if model.loaded {
-                    let eject = add(menu, "Eject") { _ = hunchHost(["compute", "local:", "unload"]) }
-                    eject.image = NSImage(systemSymbolName: "eject", accessibilityDescription: "Eject")
-                } else {
-                    add(menu, "Load") {
-                        DispatchQueue.global().async { _ = hunchHost(["compute", "local:", "load", model.id]) }
-                    }
-                }
+            settings.refreshHosts()
+            speech(menu, seat)
+            if let compute = seat.compute.map(split) {
+                model(menu, seat, compute)
             }
             // One item, as Handy has it: redirect, or stop the redirect
             if seat.target == "focus" {
@@ -1035,6 +1128,60 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDeleg
         add(menu, "Settings…", key: ",") { self.showSettings() }
         menu.addItem(.separator())
         add(menu, "Quit", key: "q") { NSApp.terminate(nil) }
+    }
+
+    /// Where the speech goes, among the hosts the human allowed
+    func speech(_ menu: NSMenu, _ seat: SeatState) {
+        let chosen = seat.compute.map(split)?.host
+        let hosts = (settings.roles.contains("compute") ? ["localhost"] : []) + settings.micAllow
+        let speech = add(menu, chosen.map { "Speech to " + hostName($0) } ?? "Speech to…")
+        speech.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Speech")
+        let computes = NSMenu()
+        for host in hosts {
+            let item = add(computes, hostName(host)) {
+                if case .failure(let failure) = hunchHost(["seat", "compute", host, "local:"]) {
+                    self.showError(failure.message)
+                }
+            }
+            item.state = host == chosen ? .on : .off
+        }
+        computes.addItem(.separator())
+        add(computes, "Allowed Hosts…") { self.showSettings(.dictation) }
+        speech.submenu = computes
+    }
+
+    /// The model, on COMPUTE, as last asked: another host answers over ssh
+    func model(_ menu: NSMenu, _ seat: SeatState, _ compute: (host: String, addr: String)) {
+        let model = settings.models.first { $0.id == seat.model }
+        // A loaded model takes about its file's size in memory
+        let memory = seat.loading ? " · loading"
+            : model?.loaded == true ? " · " + ByteCountFormatter.string(fromByteCount: model!.size, countStyle: .memory) : ""
+        let item = add(menu, (model.map { $0.name ?? $0.id } ?? "No model") + memory)
+        let models = NSMenu()
+        for choice in settings.models {
+            let entry = add(models, choice.name ?? choice.id) {
+                if case .failure(let failure) = hunchHost(["seat", "model", choice.id]) {
+                    self.showError(failure.message)
+                }
+            }
+            entry.state = choice.id == seat.model ? .on : .off
+        }
+        item.submenu = models.items.isEmpty ? nil : models
+        guard let model, !seat.loading else { return }
+        let (host, addr) = compute
+        if model.loaded {
+            let eject = add(menu, "Eject") {
+                DispatchQueue.global().async {
+                    _ = hunchHost(["compute", addr, "unload"], on: host)
+                    DispatchQueue.main.async { self.settings.refreshModels() }
+                }
+            }
+            eject.image = NSImage(systemSymbolName: "eject", accessibilityDescription: "Eject")
+        } else {
+            add(menu, "Load") {
+                DispatchQueue.global().async { _ = hunchHost(["compute", addr, "load", model.id], on: host) }
+            }
+        }
     }
 
     /// The app's own menu, never shown in the menu bar while it has no
