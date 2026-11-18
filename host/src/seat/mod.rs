@@ -30,8 +30,8 @@ Commands:
   preload on|off        Load the model at start, or at the first dictation
   warm MINUTES|always   Keep the model in GPU memory this long while idle,
                         from the service's next start
-  key KEY               Dictate while KEY is held: right-command,
-                        right-option, right-control, right-shift or fn
+  key KEY               Dictate while KEY is held: right-super,
+                        right-alt, right-control, right-shift or fn
   compute COMPUTE       Transcribe with COMPUTE; localhost local: so far
 
 TARGET is focus, or HOST ADDR WINDOW. Escape cancels a dictation.";
@@ -44,7 +44,7 @@ const WARM_VAR: &str = "GGML_METAL_RESIDENCY_KEEP_ALIVE_S";
 /// Ten years, in seconds: as good as always, and within an int
 const WARM_ALWAYS: &str = "315360000";
 /// Handy's default, which the human knows
-const DEFAULT_KEY: &str = "right-command";
+const DEFAULT_KEY: &str = "right-super";
 /// How often a watch checks whether its client is gone
 const WATCH_CHECK: Duration = Duration::from_secs(1);
 /// How long the seat waits for Accessibility before it watches keys

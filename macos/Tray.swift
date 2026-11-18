@@ -296,8 +296,8 @@ func restartService() {
 /// The dictation keys hunch-host knows, by its names, as the human reads
 /// them, and by the keycodes macOS gives them
 let dictationKeys: [(name: String, label: String, code: UInt16)] = [
-    ("right-command", "Right ⌘", 54),
-    ("right-option", "Right ⌥", 61),
+    ("right-super", "Right ⌘", 54),
+    ("right-alt", "Right ⌥", 61),
     ("right-control", "Right ⌃", 62),
     ("right-shift", "Right ⇧", 60),
     ("fn", "fn", 63),

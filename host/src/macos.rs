@@ -600,12 +600,12 @@ pub struct DictationKey {
 
 pub const DICTATION_KEYS: &[DictationKey] = &[
     DictationKey {
-        name: "right-command",
+        name: "right-super",
         code: 54,
         flag: 0x10,
     },
     DictationKey {
-        name: "right-option",
+        name: "right-alt",
         code: 61,
         flag: 0x40,
     },
