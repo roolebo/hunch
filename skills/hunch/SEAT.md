@@ -68,7 +68,8 @@ Commands:
     transcribing
                 true from the key's release until the text is sent
     loading     true while MODEL loads
-    compute     the COMPUTE in use
+    compute     the COMPUTE in use, or null on a host without a compute
+                until the human picks one on another host
     model       the MODEL in use
     target      the TARGET
     key         the KEY
@@ -113,8 +114,8 @@ Commands:
 
 Rules:
 
-- By default nothing leaves the host: the compute is local, the camera is
-  off and every allow is empty.
+- By default nothing leaves the host: the compute is local, or none on a
+  host without one; the camera is off and every allow is empty.
 - The seat sends a device's data only to the hosts in its allow. compute
   fails if the mic's allow doesn't list COMPUTE's host.
 - A recording goes to COMPUTE's host over ssh, as `hunch-host compute`

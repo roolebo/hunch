@@ -66,6 +66,9 @@ with its id, the result or the error:
 
 Commands of the host itself:
 
+    hunch-host roles    the roles this hunch-host serves, as a JSON array,
+                        e.g. ["wm","seat","browser"] on a seat built without
+                        compute
     hunch-host wms      the ADDR of each wm not inside another one:
                         graphical desktops and text consoles, as a JSON
                         array
