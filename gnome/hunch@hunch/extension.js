@@ -426,10 +426,14 @@ class Indicator extends PanelMenu.Button {
         this._icon = new St.Icon({gicon: icon, style_class: 'system-status-icon'});
         this.add_child(this._icon);
         this._seat = null;
-        // Built each time it opens, so it shows what's true now
+        this._data = null;
+        // GNOME won't open an empty menu, so it shows what it last knew,
+        // then what's true now
+        this._build();
+        this._refresh().catch(e => logError(e, 'hunch: the menu'));
         this.menu.connect('open-state-changed', (_, open) => {
             if (open)
-                this._fill().catch(e => logError(e, 'hunch: the menu'));
+                this._refresh().catch(e => logError(e, 'hunch: the menu'));
         });
     }
 
@@ -469,22 +473,36 @@ class Indicator extends PanelMenu.Button {
         }
     }
 
-    async _fill() {
+    /// Asks hunch-host what the menu shows, all at once, since another
+    /// host's models come over ssh
+    async _refresh() {
+        const host = this._seat?.compute.split(' ')[0] ?? LOCALHOST;
+        const [status, allow, models, browser] = await Promise.all([
+            this._status(),
+            micAllow(),
+            hunchHost(['compute', LOCAL, 'models'], {host}).then(JSON.parse, e => e),
+            hunchHost(['browser', 'status']).then(JSON.parse, () => null),
+        ]);
+        this._data = {status, allow, host, models, browser};
+        this._build();
+    }
+
+    _build() {
         this.menu.removeAll();
-        this._item(this.menu, await this._status());
+        const data = this._data;
         const seat = this._seat;
-        if (seat) {
+        this._item(this.menu, data?.status ?? 'Asking hunch-host…');
+        if (data && seat) {
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Dictation'));
             this._item(this.menu, 'Copy Last Transcription', async () => {
                 const text = await hunchHost(['seat', 'last']);
                 St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
             });
             // Where the speech goes, among the hosts the human allowed
-            const [host] = seat.compute.split(' ');
-            const computes = [LOCALHOST, ...await micAllow()].map(h => [`${h} ${LOCAL}`, hostName(h)]);
-            this._choices(`Speech to ${hostName(host)}`, computes, seat.compute,
+            const computes = [LOCALHOST, ...data.allow].map(h => [`${h} ${LOCAL}`, hostName(h)]);
+            this._choices(`Speech to ${hostName(data.host)}`, computes, seat.compute,
                 compute => hunchHost(['seat', 'compute', ...compute.split(' ')]));
-            await this._model(seat, host);
+            this._model(seat, data.host, data.models);
             if (seat.target === 'focus') {
                 this._item(this.menu, 'Redirect to Window…', async () => {
                     const window = await this._desktop.pick();
@@ -497,17 +515,15 @@ class Indicator extends PanelMenu.Button {
                     () => hunchHost(['seat', 'target', 'focus']));
             }
         }
-        await this._browser();
+        if (data?.browser)
+            this._browser(data.browser);
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._item(this.menu, 'Settings…', async () => this._extension.openPreferences());
     }
 
-    async _model(seat, host) {
-        let models;
-        try {
-            models = JSON.parse(await hunchHost(['compute', LOCAL, 'models'], {host}));
-        } catch (e) {
-            this._item(this.menu, `No models on ${hostName(host)}: ${e.message}`);
+    _model(seat, host, models) {
+        if (models instanceof Error) {
+            this._item(this.menu, `No models on ${hostName(host)}: ${models.message}`);
             return;
         }
         const model = models.find(m => m.id === seat.model);
@@ -525,13 +541,7 @@ class Indicator extends PanelMenu.Button {
             this._item(this.menu, 'Load', () => hunchHost(['compute', LOCAL, 'load', model.id], {host}));
     }
 
-    async _browser() {
-        let browser;
-        try {
-            browser = JSON.parse(await hunchHost(['browser', 'status']));
-        } catch (e) {
-            return;
-        }
+    _browser(browser) {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Browser'));
         if (browser.browsers.length === 0) {
             this._item(this.menu, 'No browser connected');
