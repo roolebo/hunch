@@ -40,10 +40,12 @@ func hunchHost(_ arguments: [String], on host: String = "localhost") -> Result<D
     let data = out.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
-        let message = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        // The first line: the rest is usage, too long for a menu or the pill
+        let said = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "hunch-host: ", with: "")
-        return .failure(Failure(message: message, status: process.terminationStatus))
+            .split(separator: "\n", maxSplits: 1).first.map(String.init)?
+            .replacingOccurrences(of: "hunch-host: ", with: "") ?? ""
+        return .failure(Failure(message: said, status: process.terminationStatus))
     }
     return .success(data)
 }
