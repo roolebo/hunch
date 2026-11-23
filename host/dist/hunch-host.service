@@ -1,0 +1,9 @@
+[Unit]
+Description=hunch-host, which serves this host's workspaces to hunch
+
+[Service]
+ExecStart=@HUNCH_HOST@
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
