@@ -1,0 +1,9 @@
+[package]
+name = "hunch-host"
+version = "0.1.0"
+edition = "2024"
+description = "Serves the workspaces of hunch's activities over 9P2000.L"
+license = "MIT"
+
+[lib]
+name = "hunch"
