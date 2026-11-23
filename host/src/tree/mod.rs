@@ -135,3 +135,8 @@ impl Tree for Workspace {
     device.write(activity, rest, data)
   }
 }
+
+mod current;
+mod remote;
+pub use current::{Current, Focus};
+pub use remote::Remote;

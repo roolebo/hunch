@@ -8,6 +8,7 @@ use hunch::client::Client;
 use hunch::device;
 use hunch::p9::errno;
 use hunch::registry::{Handler, Registry};
+use hunch::tree::{Current, Focus};
 use hunch::tree::{Error, Result, Workspace};
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -99,9 +100,37 @@ impl Handler for FakeEditor {
   }
 }
 
-/// Activity @1 has an editor, @2 has none
+/// Answers each command with its arguments, so a test sees which one ran,
+/// save context: a browser of BROWSER.md with tab 7 active
+struct FakeBrowser {
+  calls: Calls,
+}
+
+impl Handler for FakeBrowser {
+  fn run(&self, args: &[&OsStr]) -> Result<Vec<u8>> {
+    let s: Vec<String> = args
+      .iter()
+      .map(|a| a.to_string_lossy().into_owned())
+      .collect();
+    self.calls.lock().unwrap().push(s.clone());
+    if s == ["context"] {
+      let context =
+        serde_json::json!({"tab": 7, "title": "Example", "selection": null});
+      return Ok(context.to_string().into_bytes());
+    }
+    Ok(format!("{}\n", s.join(" ")).into_bytes())
+  }
+
+  fn addr(&self) -> &str {
+    "fake-browser"
+  }
+}
+
+/// Activity @1 has an editor, @2 has none; the human is in ACTIVE
 struct Fakes {
   editor: Arc<FakeEditor>,
+  browser: Arc<FakeBrowser>,
+  current: Mutex<Option<String>>,
 }
 
 /// So that Registry hands out the same fakes
@@ -124,12 +153,20 @@ impl Registry for Fakes {
   ) -> Option<Box<dyn Handler>> {
     match (role, activity) {
       ("editor", Some("@1")) => Some(Box::new(Shared(self.editor.clone()))),
+      ("browser", None) => Some(Box::new(Shared(self.browser.clone()))),
       _ => None,
     }
   }
 }
 
+impl Focus for Fakes {
+  fn current(&self) -> Option<String> {
+    self.current.lock().unwrap().clone()
+  }
+}
+
 struct Host {
+  fakes: Arc<Fakes>,
   workspace: Arc<Workspace>,
   calls: Calls,
 }
@@ -155,11 +192,20 @@ fn host() -> Host {
       unsaved: vec!["/src/dirty.c".to_string()],
       calls: calls.clone(),
     }),
+    browser: Arc::new(FakeBrowser {
+      calls: calls.clone(),
+    }),
+    current: Mutex::new(Some("@1".to_string())),
   });
-  let registry: Arc<dyn Registry> = fakes.clone();
-  let workspace =
-    Workspace::new(vec![("editor", Box::new(device::editor(registry, tmp())))]);
+  let workspace = Workspace::new(vec![
+    ("editor", Box::new(device::editor(fakes.clone(), tmp()))),
+    (
+      "browser",
+      Box::new(Current::new(device::browser(fakes.clone()), fakes.clone())),
+    ),
+  ]);
   Host {
+    fakes,
     workspace: Arc::new(workspace),
     calls,
   }
@@ -201,7 +247,10 @@ fn every_device_obeys_the_tree() {
 #[test]
 fn a_task_sees_only_the_devices_it_has() {
   let h = host();
-  assert_eq!(h.attach("@1").ls("").unwrap(), ["errstr", "editor/"]);
+  assert_eq!(
+    h.attach("@1").ls("").unwrap(),
+    ["errstr", "editor/", "browser/"]
+  );
   assert_eq!(h.attach("@2").ls("").unwrap(), ["errstr"]);
 }
 
@@ -327,4 +376,40 @@ fn an_unknown_buffer_isnt_there() {
   let h = host();
   let e = h.attach("@1").read("editor/9/body").unwrap_err();
   assert_eq!(e.errno, errno::ENOENT);
+}
+
+#[test]
+fn the_browser_is_in_the_current_task_only() {
+  let h = host();
+  assert_eq!(h.attach("@1").read("browser/index").unwrap(), b"1\t7\n");
+  *h.fakes.current.lock().unwrap() = Some("@2".into());
+  let e = h.attach("@1").read("browser/context").unwrap_err();
+  assert_eq!(e.errno, errno::ENOENT);
+  assert!(e.message.contains("in activity @2"), "{}", e.message);
+  h.attach("@2").read("browser/context").unwrap();
+}
+
+#[test]
+fn the_active_tab_is_the_browsers_buffer() {
+  let h = host();
+  let mut c = h.attach("@1");
+  let context: serde_json::Value =
+    serde_json::from_slice(&c.read("browser/context").unwrap()).unwrap();
+  assert_eq!(context["buffer"], 7);
+  assert!(context.get("tab").is_none(), "{context}");
+  assert_eq!(c.read("browser/index").unwrap(), b"1\t7\n");
+  assert_eq!(c.read("browser/1/name").unwrap(), b"7\n");
+  assert_eq!(c.read("browser/1/body").unwrap(), b"read\n");
+}
+
+#[test]
+fn dom_answers_for_a_selector() {
+  let h = host();
+  let mut c = h.attach("@1");
+  c.read("browser/index").unwrap();
+  assert_eq!(
+    c.rdwr("browser/1/dom", b"#main p\n").unwrap(),
+    b"dom #main p\n"
+  );
+  assert_eq!(c.read("browser/1/dom").unwrap(), b"dom\n");
 }

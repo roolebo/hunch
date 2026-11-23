@@ -1,7 +1,9 @@
 use hunch::device;
 use hunch::host::{root, serve};
+use hunch::registry::Tmux;
 use hunch::srv::Srv;
 use hunch::tree::Workspace;
+use hunch::tree::{Current, Remote};
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixListener;
@@ -41,11 +43,22 @@ fn run() -> std::io::Result<()> {
     move || srv.serve(srv_listener)
   });
 
-  // What's on the seat: the activity's editor, which serves itself
-  let seat = Workspace::new(vec![(
-    "editor",
-    Box::new(device::editor(srv, root::tmp())),
-  )]);
+  let tmux = Arc::new(Tmux);
+  // What's on the seat: the activity's editor, which serves itself, and
+  // the browser, which hunch-browser-native serves while the browser runs
+  let seat = Workspace::new(vec![
+    ("editor", Box::new(device::editor(srv, root::tmp()))),
+    (
+      "browser",
+      Box::new(Current::new(
+        Remote::new(
+          root::browser(),
+          "no browser: Firefox serves it while hunch's extension runs",
+        ),
+        tmux,
+      )),
+    ),
+  ]);
   let workspace = Workspace::new(vec![("seat", Box::new(seat))]);
   eprintln!("hunch-host: serving at {}", socket.display());
   serve(listener, Arc::new(workspace), uid);

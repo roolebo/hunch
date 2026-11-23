@@ -1,8 +1,13 @@
 //! Laws of assembly, as TREE.md says: what a combinator makes behaves as
 //! the devices it's made of, observed through the files.
 
-use hunch::tree::{ANSWER, Kind, Result, Tree, Workspace, no_such};
-use std::sync::Mutex;
+mod common;
+mod conform;
+
+use hunch::tree::{
+  ANSWER, Current, Focus, Kind, Remote, Result, Tree, Workspace, no_such,
+};
+use std::sync::{Arc, Mutex};
 
 /// note holds what was last written to it
 #[derive(Default)]
@@ -108,4 +113,79 @@ fn a_workspace_of_one_device_is_the_device_under_its_name() {
     workspace.list("@1", &[]),
     Ok(vec![("x".to_string(), Kind::Dir)])
   );
+}
+
+/// The human in an activity, or in none
+struct In(Option<&'static str>);
+
+impl Focus for In {
+  fn current(&self) -> Option<String> {
+    self.0.map(String::from)
+  }
+}
+
+#[test]
+fn a_device_in_the_current_task_is_the_device() {
+  let current = Current::new(Note::default(), Arc::new(In(Some("@1"))));
+  assert_eq!(
+    observe(&current, "@1", &[]),
+    observe(&Note::default(), "@1", &[])
+  );
+}
+
+#[test]
+fn a_device_outside_the_current_task_is_no_device() {
+  for focus in [In(Some("@2")), In(None)] {
+    let with = Workspace::new(vec![(
+      "x",
+      Box::new(Current::new(Note::default(), Arc::new(focus))),
+    )]);
+    let without = Workspace::new(vec![]);
+    assert_eq!(
+      observe(&with, "@1", &["x"]),
+      observe(&without, "@1", &["x"])
+    );
+    assert_eq!(with.list("@1", &[]), without.list("@1", &[]));
+  }
+}
+
+/// Serves TREE at a socket of its own, as hunch-browser-native does
+fn served(tree: Note, name: &str) -> std::path::PathBuf {
+  let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+  let socket = dir.join(name);
+  let _ = std::fs::remove_file(&socket);
+  let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+  std::thread::spawn(move || hunch::host::serve(listener, Arc::new(tree), 0));
+  socket
+}
+
+#[test]
+fn a_device_through_a_proxy_is_the_device() {
+  let remote = Remote::new(served(Note::default(), "note.sock"), "gone");
+  assert_eq!(
+    observe(&remote, "@1", &[]),
+    observe(&Note::default(), "@1", &[])
+  );
+}
+
+#[test]
+fn a_device_through_a_proxy_obeys_the_tree() {
+  let remote = Remote::new(served(Note::default(), "conform.sock"), "gone");
+  let workspace = Workspace::new(vec![("x", Box::new(remote))]);
+  conform::conforms(&mut common::attach(Arc::new(workspace), "@1"));
+}
+
+#[test]
+fn a_proxy_to_nothing_is_no_device() {
+  let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+  let with = Workspace::new(vec![(
+    "x",
+    Box::new(Remote::new(dir.join("nothing.sock"), "gone")),
+  )]);
+  let without = Workspace::new(vec![]);
+  assert_eq!(
+    observe(&with, "@1", &["x"]),
+    observe(&without, "@1", &["x"])
+  );
+  assert_eq!(with.list("@1", &[]), without.list("@1", &[]));
 }

@@ -5,6 +5,7 @@
 pub mod client;
 pub mod device;
 pub mod host;
+pub mod native;
 pub mod p9;
 pub mod peer;
 pub mod registry;

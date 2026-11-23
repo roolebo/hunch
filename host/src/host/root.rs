@@ -28,6 +28,11 @@ pub fn srv() -> PathBuf {
   root().join("sock").join("srv.sock")
 }
 
+/// Where the browser's bridge serves it, for hunch-host to find
+pub fn browser() -> PathBuf {
+  root().join("sock").join("browser.sock")
+}
+
 pub fn log() -> PathBuf {
   root().join("hunch-host.log")
 }
