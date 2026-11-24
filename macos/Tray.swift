@@ -250,6 +250,52 @@ struct SeatState: Decodable {
   let error: String?
 }
 
+/// The namespace, which only the human writes, here through the app; it
+/// mounts the ENDPOINT inference/ is, as INFERENCE.md in hunch says
+enum Namespace {
+  static var url: URL {
+    let config =
+      ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map {
+        URL(fileURLWithPath: $0)
+      }
+      ?? FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".config")
+    return config.appendingPathComponent("hunch/namespace")
+  }
+
+  static func lines() -> [String] {
+    let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    return text.split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+  }
+
+  /// The words of a mount on inference/, if LINE is one
+  static func mount(_ line: String) -> String? {
+    let words = line.split(separator: " ").map(String.init)
+    return words.count == 3 && words[0] == "mount" && words[2] == "/inference"
+      ? words[1] : nil
+  }
+
+  /// The ENDPOINT mounted: the last mount, else local:
+  static func mounted() -> String {
+    lines().compactMap(mount).last ?? "local:"
+  }
+
+  /// Mounts ENDPOINT, in place of the mounts before, keeping the rest
+  static func mount(endpoint: String) throws {
+    var lines = lines().filter { mount($0) == nil }
+    while lines.last == "" { lines.removeLast() }
+    if endpoint != "local:" {
+      lines.append("mount \(endpoint) /inference")
+    }
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(),
+      withIntermediateDirectories: true)
+    try (lines.joined(separator: "\n") + "\n").write(
+      to: url, atomically: true, encoding: .utf8)
+  }
+}
+
 /// An item of the seat's menu, as SEAT.md's Files say
 struct MenuItem: Decodable {
   let title: String?
@@ -264,6 +310,14 @@ struct MenuItem: Decodable {
   let items: [MenuItem]?
 }
 
+let showInDockKey = "showInDock"
+
+/// Puts the app in the Dock or takes it out; the tray icon stays
+@MainActor
+func showInDock(_ shown: Bool) {
+  NSApp.setActivationPolicy(shown ? .regular : .accessory)
+}
+
 /// What the app's windows show
 @MainActor
 final class Settings: ObservableObject {
@@ -276,6 +330,11 @@ final class Settings: ObservableObject {
   @Published var grants: [Grant] = []
   @Published var error: String?
   @Published var seat: SeatState?
+  /// The ENDPOINT the namespace mounts on inference/
+  @Published var mounted = Namespace.mounted()
+  /// The models of inference/
+  @Published var models: [SeatModel] = []
+  @Published var inDock = UserDefaults.standard.bool(forKey: showInDockKey)
 
   var missing: Bool { grants.contains { !$0.allowed } }
 
@@ -296,8 +355,117 @@ final class Settings: ObservableObject {
         }
       }
     }
+    refreshHosts()
   }
 
+  /// Where speech goes, and the models there
+  func refreshHosts() {
+    mounted = Namespace.mounted()
+    DispatchQueue.global().async {
+      // A server's come over the network
+      let models = decode([SeatModel].self, "inference/models") ?? []
+      DispatchQueue.main.async { self.models = models }
+    }
+  }
+
+  func mount(_ endpoint: String) {
+    do {
+      try Namespace.mount(endpoint: endpoint)
+    } catch {
+      self.error = error.localizedDescription
+    }
+    refreshHosts()
+  }
+}
+
+/// Where speech goes: This Mac, or a server by its URL, with the key this
+/// host logs in with, which hunch-host keeps in the Keychain; the key's
+/// field shows none, since it isn't read back
+struct InferenceSection: View {
+  @ObservedObject var settings: Settings
+  @State private var server = ""
+  @State private var key = ""
+  @State private var said: String?
+  /// The human picked a server, which isn't mounted until they give it
+  @State private var picking = false
+
+  var local: Bool { settings.mounted == "local:" && !picking }
+
+  var body: some View {
+    SwiftUI.Section {
+      Picker(
+        "Transcribe on",
+        selection: Binding(
+          get: { local ? "local:" : "server" },
+          set: {
+            picking = $0 == "server"
+            if !picking { settings.mount("local:") }
+          })
+      ) {
+        Text("This Mac").tag("local:")
+        Text("A Server").tag("server")
+      }
+      if !local {
+        // verbatim, or the URL shows as a link
+        TextField(
+          "Server", text: $server,
+          prompt: Text(verbatim: "http://thinkstation:8080/v1")
+        )
+        .onSubmit(mount)
+        HStack {
+          SecureField(
+            "Key", text: $key, prompt: Text("if the server asks for one"))
+          Button("Keep", action: keep).disabled(key.isEmpty || local)
+        }
+      }
+      if let said { Text(said).foregroundStyle(.secondary) }
+    } footer: {
+      Text(
+        "This Mac runs its own models; a server is an OpenAI-compatible "
+          + "one. Press Return to keep the server."
+      )
+      .foregroundStyle(.secondary)
+    }
+    .onAppear { server = local ? "" : settings.mounted }
+    .onChange(of: settings.mounted) { _ in picking = false }
+  }
+
+  func mount() {
+    let url = server.trimmingCharacters(in: .whitespaces)
+    guard let parts = URLComponents(string: url),
+      ["http", "https"].contains(parts.scheme), parts.host != nil
+    else {
+      said = "\(url) isn't a server's URL"
+      return
+    }
+    settings.mount(url)
+    picking = false
+    said = nil
+  }
+
+  func keep() {
+    switch writeTree("inference/login", key + "\n") {
+    case .success:
+      key = ""
+      said = "Kept the key in the Keychain"
+    case .failure(let failure):
+      said = failure.message
+    }
+  }
+}
+
+/// A model as inference/models lists it
+struct SeatModel: Decodable, Hashable {
+  let id: String
+  let name: String?
+  let inputs: [String]?
+  let outputs: [String]?
+
+  /// Takes audio and answers text: it transcribes
+  var transcribes: Bool {
+    (inputs ?? []).contains { $0.hasPrefix("audio/") }
+      && (outputs ?? []).contains { $0.hasPrefix("text/") }
+  }
 }
 
 struct GrantRows: View {
@@ -318,6 +486,45 @@ struct GrantRows: View {
       }
     }
   }
+}
+
+/// The first thing a human sees: what to grant, gone once all is granted
+struct PermissionsView: View {
+  @ObservedObject var settings: Settings
+
+  var body: some View {
+    Form {
+      SwiftUI.Section {
+        KeyRow(settings: settings)
+      } header: {
+        Text("Dictation")
+      } footer: {
+        Text("Hold the key and speak; Escape cancels.").foregroundStyle(
+          .secondary)
+      }
+      SwiftUI.Section {
+        GrantRows(settings: settings)
+      } header: {
+        Text("Hunch needs a few permissions")
+      } footer: {
+        Text(
+          "macOS asks before any app can see your windows, type, or hear you "
+            + "or your keys. Nothing leaves this Mac."
+        )
+        .foregroundStyle(.secondary)
+      }
+    }
+    .formStyle(.grouped)
+    .scrollIndicators(.never)
+    .frame(width: 440)
+    .fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+/// Restarts the service the app runs, for a setting it reads at start
+@MainActor
+func restartService() {
+  (NSApp.delegate as? Tray)?.service?.terminate()
 }
 
 /// The dictation keys hunch-seat knows, by its names, as the human reads
@@ -372,35 +579,223 @@ struct KeyRow: View {
   }
 }
 
-/// The first thing a human sees: what to grant, gone once all is granted
-struct PermissionsView: View {
+/// The app's version, as its Info.plist says
+let version =
+  Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+
+struct SettingsView: View {
+  enum Tab: CaseIterable {
+    case general, dictation, inference, permissions, about
+  }
+
   @ObservedObject var settings: Settings
+  let tab: Tab
 
   var body: some View {
-    Form {
+    switch tab {
+    case .general: general
+    case .dictation: dictation
+    case .inference: inference
+    case .permissions: permissions
+    case .about: about
+    }
+  }
+
+  /// Sets the seat through its ctl; the change comes back by watch
+  nonisolated func seat(_ arguments: String...) -> @Sendable (String) -> Void {
+    { value in _ = seatCtl((arguments + [value]).joined(separator: " ")) }
+  }
+
+  var general: some View {
+    page {
+      Toggle(
+        "Show in Dock",
+        isOn: Binding(
+          get: { settings.inDock },
+          set: {
+            settings.inDock = $0
+            UserDefaults.standard.set($0, forKey: showInDockKey)
+            showInDock($0)
+          }
+        )
+      )
+    }
+  }
+
+  var permissions: some View {
+    page { GrantRows(settings: settings) }
+  }
+
+  /// The models of the ENDPOINT in use that turn speech into text
+  var transcribing: [SeatModel] { settings.models.filter(\.transcribes) }
+
+  var dictation: some View {
+    page {
+      SwiftUI.Section {
+        Picker(
+          "Model",
+          selection: Binding(
+            get: { settings.seat?.model ?? "" },
+            set: { seat("model")($0) })
+        ) {
+          let models = transcribing
+          if !models.contains(where: { $0.id == settings.seat?.model }) {
+            Text("None").tag("")
+          }
+          ForEach(models, id: \.id) {
+            Text($0.name ?? $0.id).tag($0.id)
+          }
+        }
+      } footer: {
+        if transcribing.isEmpty {
+          Text("No model of Inference says it takes speech.")
+            .foregroundStyle(.secondary)
+        }
+      }
       SwiftUI.Section {
         KeyRow(settings: settings)
-      } header: {
-        Text("Dictation")
+        Toggle(
+          "Press Enter after the text",
+          isOn: Binding(
+            get: { settings.seat?.submit ?? true },
+            set: { seat("submit")($0 ? "on" : "off") }
+          )
+        )
+        Toggle(
+          "Load the model at start",
+          isOn: Binding(
+            get: { settings.seat?.preload ?? true },
+            set: { seat("preload")($0 ? "on" : "off") }
+          )
+        )
+        .help(
+          "Off loads it at the first dictation, and frees its memory now"
+        )
+        Picker(
+          "Keep the model ready",
+          selection: Binding(
+            get: {
+              settings.seat?.warm.map(String.init) ?? "always"
+            },
+            set: {
+              seat("warm")($0)
+              restartService()
+            }
+          )
+        ) {
+          Text("3 minutes").tag("3")
+          Text("10 minutes").tag("10")
+          Text("1 hour").tag("60")
+          Text("Always").tag("always")
+        }
+        .help(
+          "How long the model stays in GPU memory while you don't dictate; "
+            + "after that, the next dictation waits a moment"
+        )
       } footer: {
         Text("Hold the key and speak; Escape cancels.").foregroundStyle(
           .secondary)
       }
+    }
+  }
+
+  var inference: some View {
+    page {
+      InferenceSection(settings: settings)
+    }
+  }
+
+  var about: some View {
+    page {
       SwiftUI.Section {
-        GrantRows(settings: settings)
-      } header: {
-        Text("Hunch needs a few permissions")
-      } footer: {
-        Text(
-          "macOS asks before any app can see your windows, type, or hear you "
-            + "or your keys. Nothing leaves this Mac."
+        HStack(spacing: 12) {
+          Image(nsImage: NSApp.applicationIconImage).resizable()
+            .frame(width: 48, height: 48)
+          VStack(alignment: .leading) {
+            Text("Hunch").font(.headline)
+            Text("Version \(version)")
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      SwiftUI.Section("Ideas") {
+        credit(
+          "Vannevar Bush", "As We May Think, 1945",
+          "https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/"
         )
-        .foregroundStyle(.secondary)
+        credit(
+          "J. C. R. Licklider", "Man-Computer Symbiosis, 1960",
+          "https://groups.csail.mit.edu/medg/people/psz/Licklider.html"
+        )
+        credit(
+          "Douglas Engelbart", "Augmenting Human Intellect, 1962",
+          "https://www.dougengelbart.org/")
+      }
+      SwiftUI.Section("Built on") {
+        credit(
+          "ggml", "Georgi Gerganov and its authors",
+          "https://github.com/ggml-org/ggml")
+        credit(
+          "llama.cpp", "Its authors",
+          "https://github.com/ggml-org/llama.cpp")
+        credit(
+          "transcribe.cpp", "Its authors",
+          "https://github.com/handy-computer/transcribe.cpp")
+      }
+      SwiftUI.Section("Inspiration") {
+        credit(
+          "Pipit", "The first dictation app that got Hunch going",
+          "https://www.pipitvoice.com")
       }
     }
+  }
+
+  func credit(_ name: String, _ work: String, _ url: String) -> some View {
+    LabeledContent(name) { Link(work, destination: URL(string: url)!) }
+  }
+
+  /// The tabs, as macOS lays settings out: in the window's toolbar
+  @MainActor
+  static func tabs(_ settings: Settings) -> NSTabViewController {
+    let tabs = NSTabViewController()
+    tabs.tabStyle = .toolbar
+    // The window says Settings, whichever tab is open
+    tabs.canPropagateSelectedChildViewControllerTitle = false
+    let pages: [(String, String, Tab)] = [
+      ("General", "gearshape", .general),
+      ("Dictation", "waveform", .dictation),
+      ("Inference", "network", .inference),
+      ("Permissions", "lock.shield", .permissions),
+      ("About", "info.circle", .about),
+    ]
+    for (title, symbol, tab) in pages {
+      let host = NSHostingController(
+        rootView: SettingsView(settings: settings, tab: tab))
+      // The window takes each tab's own height
+      host.sizingOptions = .preferredContentSize
+      let item = NSTabViewItem(viewController: host)
+      item.label = title
+      item.image = NSImage(
+        systemSymbolName: symbol, accessibilityDescription: title)
+      tabs.addTabViewItem(item)
+    }
+    return tabs
+  }
+
+  /// A tab: a grouped form, with hunch-seat's error on top if it has one
+  func page(@ViewBuilder _ content: () -> some View) -> some View {
+    Form {
+      if let error = settings.error {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+      }
+      content()
+    }
     .formStyle(.grouped)
+    // The window takes the form's height, so there's nothing to scroll
     .scrollIndicators(.never)
-    .frame(width: 440)
+    .frame(width: 460)
     .fixedSize(horizontal: false, vertical: true)
   }
 }
@@ -611,6 +1006,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
   let outline = Outline()
   let settings = Settings()
   var registerError: String?
+  var settingsWindow: NSWindow?
   var permissionsWindow: NSWindow?
   var timer: Timer?
   var errorShown: String?
@@ -620,11 +1016,14 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
   func applicationShouldHandleReopen(
     _ sender: NSApplication, hasVisibleWindows: Bool
   ) -> Bool {
-    showPermissions()
+    showSettings()
     return false
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    if settings.inDock {
+      showInDock(true)
+    }
     item.button?.image = trayIcon()
     NSApp.mainMenu = mainMenu()
     let menu = NSMenu()
@@ -773,6 +1172,19 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
     return window
   }
 
+  func showSettings(_ tab: SettingsView.Tab? = nil) {
+    settingsWindow = show("Settings", settingsWindow) {
+      SettingsView.tabs(settings)
+    }
+    if let tab,
+      let tabs = settingsWindow?.contentViewController
+        as? NSTabViewController
+    {
+      tabs.selectedTabViewItemIndex =
+        SettingsView.Tab.allCases.firstIndex(of: tab) ?? 0
+    }
+  }
+
   func showPermissions() {
     permissionsWindow = show("Hunch", permissionsWindow) {
       NSHostingController(rootView: PermissionsView(settings: settings))
@@ -789,10 +1201,13 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
   func windowWillClose(_ notification: Notification) {
     let closing = notification.object as? NSWindow
+    if closing === settingsWindow {
+      settingsWindow = nil
+    }
     if closing === permissionsWindow {
       permissionsWindow = nil
     }
-    if permissionsWindow == nil {
+    if settingsWindow == nil && permissionsWindow == nil {
       timer?.invalidate()
       timer = nil
     }
@@ -821,7 +1236,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
     } else {
       add(menu, "Not running").toolTip = registerError
       menu.addItem(.separator())
-      add(menu, "Settings…", key: ",") { self.showPermissions() }
+      add(menu, "Settings…", key: ",") { self.showSettings() }
     }
     menu.addItem(.separator())
     add(menu, "Quit", key: "q") { NSApp.terminate(nil) }
@@ -875,9 +1290,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
         showError(failure.message)
       }
     } else if let page = item.settings {
-      // The tray's settings are its permissions so far
-      _ = page
-      showPermissions()
+      showSettings(SettingsView.Tab.allCases.first { "\($0)" == page })
     }
   }
 
@@ -885,7 +1298,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate,
   /// Dock icon, but where ⌘, ⌘W and ⌘Q work in its windows
   func mainMenu() -> NSMenu {
     let app = NSMenu()
-    add(app, "Settings…", key: ",") { self.showPermissions() }
+    add(app, "Settings…", key: ",") { self.showSettings() }
     app.addItem(
       NSMenuItem(
         title: "Close", action: #selector(NSWindow.performClose(_:)),
