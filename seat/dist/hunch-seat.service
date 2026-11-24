@@ -1,0 +1,9 @@
+[Unit]
+Description=hunch-seat, which serves this host's seat to hunch
+
+[Service]
+ExecStart=@HUNCH_SEAT@ serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

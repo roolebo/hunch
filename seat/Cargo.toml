@@ -1,0 +1,12 @@
+[package]
+name = "hunch-seat"
+version = "0.1.0"
+edition = "2024"
+description = "Serves a host's seat to hunch: dictation, its wms and compute"
+license = "MIT"
+
+[dependencies]
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

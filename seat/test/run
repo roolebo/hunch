@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+#
+# test/run: end-to-end tests of hunch-seat, through its service.
+#
+# Each test gets its own HOME, XDG directories and service, all under a
+# temporary directory: the human's own service and settings stay
+# untouched.
+#
+
+set -e
+
+CURDIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+ROOT=$(dirname "$CURDIR")
+HOST=$ROOT/target/debug/hunch-seat
+# Short, since a unix socket's path has room for about 100 bytes
+DIR=$(mktemp -d /tmp/hunch-seat-test.XXXXXX)
+FAILED=0
+N=0
+
+die() {
+  echo "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat << EOF
+Usage: $0 [TEST...]
+
+Runs the given tests, or all of them:
+$(declare -F | cut -d' ' -f3 | grep '^test_' | sed 's/^/  /')
+EOF
+}
+
+cleanup() {
+  stop
+  rm -rf "$DIR"
+}
+
+# Run hunch-seat ARGS with stdin from IN; sets OUT, ERR and STATUS
+call() {
+  STATUS=0
+  "$HOST" "$@" < "$IN" > "$TEST_DIR/out" 2> "$TEST_DIR/err" || STATUS=$?
+  OUT=$(< "$TEST_DIR/out")
+  ERR=$(< "$TEST_DIR/err")
+}
+
+# Wait up to five seconds for COMMAND to succeed
+wait_for() {
+  local i
+  for i in $(seq 50); do
+    "$@" && return
+    sleep 0.1
+  done
+  return 1
+}
+
+serve() {
+  "$HOST" serve 2>> "$TEST_DIR/serve.log" &
+  SERVICE=$!
+  wait_for [ -S "$XDG_RUNTIME_DIR/hunch/sock/seat.sock" ] ||
+    die "The service didn't start: $(< "$TEST_DIR/serve.log")"
+}
+
+teardown() {
+  stop
+}
+
+stop() {
+  [ -n "$SERVICE" ] || return 0
+  kill "$SERVICE" 2> /dev/null || true
+  wait "$SERVICE" 2> /dev/null || true
+  SERVICE=
+}
+
+check() {
+  [ "$2" == "$3" ] && return
+  echo "# $1: expected '$3', got '$2'"
+  FAILED=$((FAILED + 1))
+}
+
+check_has() {
+  [[ $2 == *"$3"* ]] && return
+  echo "# $1: '$2' lacks '$3'"
+  FAILED=$((FAILED + 1))
+}
+
+macos() {
+  [ "$(uname)" == Darwin ]
+}
+
+test_help() {
+  call --help
+  check status "$STATUS" 0
+  check_has out "$OUT" "Usage: hunch-seat"
+  call
+  check status "$STATUS" 1
+  check_has err "$ERR" "missing ROLE"
+  call frobnicate
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown role"
+}
+
+test_wms() {
+  call wms
+  check status "$STATUS" 0
+  check wms "$OUT" '[]'
+}
+
+test_service_runs_once() {
+  call serve
+  check status "$STATUS" 1
+  check_has err "$ERR" "a service already runs"
+}
+
+test_service_replaces_a_stale_socket() {
+  kill -9 "$SERVICE"
+  wait "$SERVICE" 2> /dev/null || true
+  serve
+  call wms
+  check status "$STATUS" 0
+}
+
+test_service_is_needed() {
+  stop
+  call wms
+  check status "$STATUS" 1
+  check_has err "$ERR" "start it with hunch-seat serve"
+}
+
+run() {
+  local failed=$FAILED
+  N=$((N + 1))
+  TEST=$1
+  TEST_DIR=$DIR/$N
+  IN=$TEST_DIR/in
+  mkdir -p "$TEST_DIR/home" "$TEST_DIR/run" "$TEST_DIR/config/hunch" \
+    "$TEST_DIR/state"
+  : > "$IN"
+  (
+    export PATH=$DIR/bin:$PATH
+    export HOME=$TEST_DIR/home
+    export XDG_RUNTIME_DIR=$TEST_DIR/run
+    export XDG_CONFIG_HOME=$TEST_DIR/config
+    export XDG_STATE_HOME=$TEST_DIR/state
+    trap teardown EXIT
+    serve
+    "$1"
+    exit $((FAILED - failed))
+  ) || FAILED=$((FAILED + $?))
+  if [ $FAILED -eq $failed ]; then
+    echo "ok $1"
+  else
+    echo "not ok $1"
+  fi
+}
+
+if [ "$1" == "-h" -o "$1" == "--help" ]; then
+  usage
+  exit 0
+fi
+command -v jq > /dev/null || die "jq is not installed"
+trap cleanup EXIT
+unset HUNCH_SEAT_SERVED
+(cd "$ROOT" && cargo build -q) || die "Can't build hunch-seat"
+mkdir "$DIR/bin"
+ln -s "$HOST" "$DIR/bin/hunch-seat"
+
+TESTS=("$@")
+[ $# -gt 0 ] || TESTS=($(declare -F | cut -d' ' -f3 | grep '^test_'))
+for test in "${TESTS[@]}"; do
+  declare -F "$test" > /dev/null || die "No such test: $test"
+  run "$test"
+done
+[ $FAILED -eq 0 ] || die "$FAILED failed"
