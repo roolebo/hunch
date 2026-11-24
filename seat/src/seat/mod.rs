@@ -12,7 +12,7 @@ use crate::error::{Error, Result, failed};
 use crate::inference;
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
-use crate::{wav, wm};
+use crate::{opus, wav, wm};
 #[cfg(target_os = "linux")]
 use linux as platform;
 use platform::Key;
@@ -504,12 +504,17 @@ fn deliver(text: &str, submit: bool) -> Result<()> {
 
 /// PCM as the first of INPUTS this seat writes
 fn encode(inputs: &Value, pcm: &[f32]) -> Result<(&'static str, Vec<u8>)> {
-  let mut inputs = inputs.as_array().into_iter().flatten();
-  if inputs.any(|input| input == wav::TYPE) {
-    return Ok((wav::TYPE, wav::write(pcm)));
+  let inputs = inputs.as_array().into_iter().flatten();
+  for input in inputs.filter_map(Value::as_str) {
+    match input {
+      opus::TYPE => return Ok((opus::TYPE, opus::write(pcm)?)),
+      wav::TYPE => return Ok((wav::TYPE, wav::write(pcm))),
+      _ => {}
+    }
   }
   Err(failed(format!(
-    "the model doesn't take {}, which the seat writes",
+    "the model takes none of {}, {}, which the seat writes",
+    opus::TYPE,
     wav::TYPE
   )))
 }

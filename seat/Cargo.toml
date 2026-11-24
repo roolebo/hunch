@@ -9,12 +9,15 @@ license = "MIT"
 default = ["wm", "inference", "seat"]
 wm = []
 inference = ["dep:transcribe-cpp"]
-seat = ["wm", "dep:cpal"]
+seat = ["wm", "dep:cpal", "dep:opus", "dep:ogg"]
 
 [dependencies]
 # The tree and its 9P2000.L, which local: is served with, and the peers
 # that mount on the seat
 hunch = { package = "hunch-host", path = "../host" }
+# Speech to a server as Ogg Opus; opus builds libopus with cmake
+ogg = { version = "0.9", optional = true }
+opus = { version = "0.4", optional = true }
 serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]

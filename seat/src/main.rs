@@ -7,6 +7,8 @@ mod error;
 mod inference;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
+#[cfg(all(unix, feature = "seat"))]
+mod opus;
 #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
 mod seat;
 #[cfg(unix)]
