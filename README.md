@@ -15,8 +15,8 @@ The human talks to an agent without leaving Vim and without new keys. The
 setup:
 
 - iTerm2 runs tmux with two panes: Vim and Claude Code.
-- Vim is started with --servername; [vim-hunch] registers it as the editor.
-- [claude-hunch] registers Claude Code as an agent.
+- [vim-hunch] serves Vim to its activity as the editor.
+- [claude-hunch] marks Claude Code's pane as the agent's.
 - [tmux-hunch] is loaded in tmux.
 - A dictation app, [Handy] or [Pipit], pastes speech into the terminal
   while a key is held.
@@ -62,9 +62,8 @@ tools composed through plain text.
 A report is written in [Typst] and read where it looks finished: in
 Firefox. `typst watch --features html` serves the render and reloads the
 page whenever the source changes; [tinymist] previews it as pages.
-[firefox-hunch] connects Firefox to the agent's tmux window through
-`hunch-browser-server`, so the browser may run on the human's laptop and
-the agent on a remote machine.
+[firefox-hunch] serves Firefox to hunch by native messaging; the agent of
+the activity the human is in reads it.
 
 The human selects a sentence or any other part of the page, a figure, a
 table, corrects it by voice and gets the result back: the agent reads
@@ -98,8 +97,8 @@ ACP, the Agent Client Protocol [\[3\]][3]: the editor starts the agent as its
 child and shows it in its own panel. The editor becomes the center instead of
 the human's work, and the agent lives only as long as that editor. The human
 has to use an editor that implements ACP and talk to the agent through its
-panel. Only two participants exist: one editor and its agent. Other agents,
-tools and environments have no place in it.
+panel. Only two programs take part: one editor and its agent. Other agents,
+tools and hosts have no place in it.
 
 MCP, the Model Context Protocol [\[4\]][4]: the AI harness is the center and
 everything else is its tool. Editor integrations of agents, such as Claude
@@ -119,8 +118,7 @@ Plain tmux, sending keys to a pane: text without structure. The agent can't
 ask where the cursor is or make an edit that keeps the human's view.
 
 hunch takes ideas from all of them. It doesn't exclude them either: an ACP
-agent or an MCP server can join an environment as a participant through an
-adapter.
+agent or an MCP server can serve itself to a workspace through an adapter.
 
 ## Principles
 
@@ -136,48 +134,57 @@ interchangeable.
 
 ## Model
 
-A participant is anything that takes part in the work: the human, an editor, an
-agent, a tool. Each has a role and an id. Participants share no state.
+A device is what the human or an agent uses: an editor, a browser, a
+microphone, the windows, the models. Each serves a tree of files, as the
+devices of Plan 9 and Inferno do, and the same files work with whatever
+program is behind them.
 
-Participants talk only through channels. A channel connects two of them, as in
-CSP, and stays visible from the outside, so it can be inspected and rewired.
+A host owns devices: those of the seat, where the human sits, and those
+it runs, such as its models.
 
-An address is a URI that says how to open a channel to a participant. Some
-addresses work only inside an environment, some outside too.
+A workspace is a name space assembled from devices mounted in it. One
+host owns it, though its devices may come from several hosts. Each
+activity has its own, with its editor, its browser and its agent; the
+human moves between activities by moving between windows.
 
-An environment is a group of participants that can reach each other. It is a
-participant itself, so environments connect and nest.
-
-A registry is where the participants of an environment list themselves while
-they run: role, id and addresses. It is optional: addresses can also come from
-configuration or messages.
-
-Routing wires the channels: human to agent, agent to editor, agent to tool,
-environment to environment.
+Programs in a workspace reach each other only through its files: an
+agent sees the human's editor as `seat/editor/`, whichever editor and
+host it is.
 
 ## Getting started
 
-Needs tmux, git, jq, and Vim with +socketserver; Python 3 for the browser
-server.
+Needs tmux, git, jq, Rust to build hunch-host, and Vim 9.
 
-Put `hunch`, `hunch-editor` and `hunch-browser` from this repo on PATH and link
-`skills/hunch` into `~/.claude/skills`. The rest with the plugin managers
-you use:
+Install `hunch-host`, `hunch-9p` and `hunch-browser-native` with
+`cargo install --path host`, and link `skills/hunch` into
+`~/.claude/skills`. hunch-9p starts hunch-host when it isn't running;
+with systemd, run it as a user unit instead, to restart it after an
+upgrade:
+
+    sed "s|@HUNCH_HOST@|$(command -v hunch-host)|" \
+        host/dist/hunch-host.service \
+        > ~/.config/systemd/user/hunch-host.service
+    systemctl --user enable --now hunch-host
+
+The rest with the plugin managers you use:
 
 - [vim-hunch] and vim-fugitive in Vim
 - [tmux-hunch] in tmux
 - [claude-hunch] in Claude Code:
   `/plugin install hunch --marketplace roolebo/claude-hunch`.
 
-In one tmux window, run `vim --servername hunch` in one pane and `claude` in
-another. Both register as participants and find each other only within the
-window:
+In one tmux window, run `vim` in one pane and `claude` in another. The
+window is an activity: Vim serves itself as its editor, and the agent
+reaches it in the activity's workspace:
 
-    hunch-editor find
-    hunch find agent
+    hunch-9p read seat/editor/context
 
 To talk to the agent from Vim, add a dictation app that pastes into the
 terminal, e.g. [Handy] on Linux, macOS and Windows, or [Pipit] on macOS.
+
+## Tree protocol
+
+Specified in [skills/hunch/TREE.md](skills/hunch/TREE.md).
 
 ## Editor protocol
 
@@ -187,53 +194,25 @@ Specified in [skills/hunch/PROTOCOL.md](skills/hunch/PROTOCOL.md).
 
 Specified in [skills/hunch/BROWSER.md](skills/hunch/BROWSER.md).
 
-## Browser server
+## Browser
 
-`hunch-browser-server` registers the browser in hunch and passes the
-agent's commands to browser extensions, one per browser. The browsers may
-run on another host, e.g. the machine the human sits at. Run it in a pane
-of the agent's tmux window, listening on an address the browsers reach:
+Install [firefox-hunch], then let Firefox run its bridge, once:
 
-    HUNCH_BROWSER_TOKEN=... hunch-browser-server --listen HOST:PORT
+    hunch-browser-native --install
 
-Several browsers can connect at once; commands go to the one the human
-used last. An extension implements the browser protocol and talks to the
-server over HTTP. Each request carries `Authorization: Bearer TOKEN`, and
-`?browser=ID` with an id the extension keeps across restarts.
-
-    GET /poll?browser=ID    the next command: 200 and the command, or 204
-                            after 25 s without one; poll again right away
-    POST /reply             the reply to a command
-    POST /focus?browser=ID  the human switched to this browser
-
-A command:
-
-    id          a number to send back with the reply
-    command     a command of the browser protocol
-    args        its arguments, as strings
-
-A reply has the command's `id` and either `result`, any JSON value, or
-`error`, a message for the human.
-
-```json
-{"id": 3, "command": "dom", "args": ["main"]}
-{"id": 3, "result": "<main><p>First paragraph.</p></main>"}
-```
+Firefox starts the bridge with the extension; the agent of the activity
+the human is in reads the browser.
 
 ## Agents
 
-`hunch-editor` finds the editor in the registry and runs its handler.
-`hunch-browser` does the same for the browser.
-`hunch-editor guard FILE` exits 2, with the reason on stderr, if FILE must
-change through the editor protocol.
-
-The repo comes with the `hunch` skill for agents.
+Agents reach their activity's workspace with `hunch-9p`, from any
+program. The repo comes with the `hunch` skill, which tells them how.
 
 ## Version
 
-0.1.0, an early concept that changes as participants join. Until 1.0 a
-breaking change bumps the minor version. Each participant states the version
-it implements.
+0.1.0, an early concept that changes as devices join. Until 1.0 a
+breaking change bumps the minor version. Each device states the version it
+implements.
 
 ## Integrations
 
