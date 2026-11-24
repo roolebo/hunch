@@ -61,6 +61,11 @@ fn run(args: &[String]) -> Result<()> {
 #[cfg(unix)]
 fn here(args: &[String]) -> Option<service::Here> {
   match args.first().map(String::as_str) {
+    // In the service, which holds the Shell extension's connection
+    #[cfg(all(feature = "wm", target_os = "linux"))]
+    Some("wm") if args.get(1).is_some_and(|a| a == wm::gnome::ADDR) => {
+      Some(wm::run_here)
+    }
     // In the service, which knows the wms that serve it
     Some("wms") if args.len() == 1 => Some(|_, _, out, _| {
       use std::io::Write;
@@ -83,10 +88,14 @@ fn roles() -> Vec<&'static str> {
 }
 
 fn wms() -> Vec<&'static str> {
-  [cfg!(all(feature = "wm", target_os = "macos")).then_some("macos:")]
-    .into_iter()
-    .flatten()
-    .collect()
+  [
+    cfg!(all(feature = "wm", target_os = "macos")).then_some("macos:"),
+    #[cfg(all(feature = "wm", target_os = "linux"))]
+    wm::gnome::served().then_some(wm::gnome::ADDR),
+  ]
+  .into_iter()
+  .flatten()
+  .collect()
 }
 
 /// Whether the command runs in this process rather than in the service:

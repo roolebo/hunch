@@ -1,5 +1,7 @@
 //! The window manager role; skills/hunch/WM.md specifies it.
 
+#[cfg(target_os = "linux")]
+pub mod gnome;
 #[cfg(target_os = "macos")]
 mod macos;
 mod tmux;
@@ -237,6 +239,8 @@ pub fn open(addr: &str) -> Result<Box<dyn Wm>> {
     "tmux" => Ok(Box::new(tmux::Tmux::new(location))),
     #[cfg(target_os = "macos")]
     "macos" => Ok(Box::new(macos::Macos)),
+    #[cfg(target_os = "linux")]
+    "gnome" => Ok(Box::new(gnome::Gnome)),
     _ => Err(failed(format!("this build has no wm of SCHEME {scheme}"))),
   }
 }
@@ -395,6 +399,21 @@ pub fn run(
     }
   };
   writeln!(out, "{said}").map_err(|e| failed(format!("can't answer: {e}")))
+}
+
+/// Runs a command of gnome: in the service, which holds the extension's
+/// connection; serve is what the extension runs to make it
+#[cfg(target_os = "linux")]
+pub fn run_here(
+  args: &[String],
+  input: &mut std::fs::File,
+  out: &mut std::fs::File,
+  _: &std::sync::atomic::AtomicBool,
+) -> Result<()> {
+  if args.get(1).is_some_and(|a| a == "serve") && args.len() == 2 {
+    return gnome::serve(input, out);
+  }
+  run(args, input, out)
 }
 
 #[cfg(test)]

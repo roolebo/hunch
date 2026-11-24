@@ -3,9 +3,17 @@
 version = 4
 
 [[package]]
+name = "hunch-host"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "hunch-seat"
 version = "0.1.0"
 dependencies = [
+ "hunch-host",
  "libc",
  "serde_json",
 ]

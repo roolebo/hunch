@@ -35,6 +35,17 @@ impl fmt::Display for Error {
   }
 }
 
+/// A peer's failure, with the exit status of the protocols it gave
+impl From<hunch::peer::Failure> for Error {
+  fn from(failure: hunch::peer::Failure) -> Self {
+    match failure.status {
+      Some(4) => Error::Gone(failure.message),
+      Some(5) => Error::Cancelled(failure.message),
+      _ => Error::Failed(failure.message),
+    }
+  }
+}
+
 pub fn failed(message: impl Into<String>) -> Error {
   Error::Failed(message.into())
 }
