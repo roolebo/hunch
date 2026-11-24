@@ -19,6 +19,18 @@ pub fn root() -> PathBuf {
     .join("hunch")
 }
 
+/// $XDG_CONFIG_HOME/hunch, else ~/.config/hunch: what the human sets
+pub fn config() -> PathBuf {
+  std::env::var_os("XDG_CONFIG_HOME")
+    .filter(|dir| !dir.is_empty())
+    .map(PathBuf::from)
+    .unwrap_or_else(|| {
+      PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+        .join(".config")
+    })
+    .join("hunch")
+}
+
 pub fn socket() -> PathBuf {
   root().join("sock").join("hunch.sock")
 }

@@ -1,4 +1,4 @@
-use hunch::device;
+use hunch::device::{self, Inference, OsKeys};
 use hunch::host::{root, serve};
 use hunch::registry::Tmux;
 use hunch::srv::Srv;
@@ -43,11 +43,16 @@ fn run() -> std::io::Result<()> {
   });
 
   let tmux = Arc::new(Tmux);
-  // The host's, in every workspace; hunch-seat serves local:
+  // The host's, in every workspace, as its namespace mounts it;
+  // hunch-seat serves local:
   let inference = || {
-    Remote::new(
-      root::inference(),
-      "no local: hunch-seat serves it where it runs models",
+    Inference::new(
+      Box::new(Remote::new(
+        root::inference(),
+        "no local: hunch-seat serves it where it runs models",
+      )),
+      Arc::new(OsKeys),
+      root::config().join("namespace"),
     )
   };
   // hunch-browser-native serves it, while the browser runs

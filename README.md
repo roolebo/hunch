@@ -198,6 +198,24 @@ Specified in [skills/hunch/BROWSER.md](skills/hunch/BROWSER.md).
 
 Specified in [skills/hunch/INFERENCE.md](skills/hunch/INFERENCE.md).
 
+## Inference
+
+A Mac transcribes on its own models, local:, which hunch-seat serves. A
+host that runs none, or the human who'd rather use a workstation,
+mounts an OpenAI-compatible server on `inference/` in
+`~/.config/hunch/namespace`, as INFERENCE.md says; the tray's settings
+write it for them:
+
+    mount http://thinkstation:8080/v1 /inference
+
+A server's key isn't in a file: each host keeps its own in the OS's
+store of secrets, the Keychain on macOS and the Secret Service on Linux:
+
+    printf '%s\n' "$KEY" | hunch-9p write inference/login
+
+With http, anyone on the network between them sees the key and the
+speech.
+
 ## Browser
 
 Install [firefox-hunch], then let Firefox run its bridge, once:
