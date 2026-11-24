@@ -58,6 +58,7 @@ Commands:
     state WINDOW STATE  show WINDOW in STATE
     pick                let the human pick a window, print its id
     screen WINDOW       print what WINDOW shows, as PNG
+    inside WINDOW       the wm that runs in WINDOW
 
 Without CLIENT, a multiplexer takes the client the human typed into
 last.
@@ -100,6 +101,19 @@ width, height, and main (true for the main one).
     visible     true if the human can see it now: not behind a tab,
                 minimized or on a workspace not shown
     focused     true for the focused one
+
+`inside` prints the wm that runs in WINDOW, as a JSON object, or null:
+
+    addr        its ADDR
+    client      the CLIENT that shows it in WINDOW
+
+A wm runs in a window of a wm, as tmux in a terminal's window or in a
+pane of another tmux, when a client of it is the window's tty; inside
+finds the tmux servers at the human's sockets.
+
+```json
+{"addr": "tmux:/tmp/tmux-1000/default", "client": "/dev/pts/4"}
+```
 
 Rules:
 

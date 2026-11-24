@@ -4,6 +4,7 @@
 use super::{Context, Display, Frame, State, Window, Wm, Workspace};
 use crate::error::{Error, Result, failed};
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 const FIELDS: &[&str] = &[
@@ -95,6 +96,31 @@ fn parse(line: &str, focused: Option<&str>) -> Option<Pane> {
     },
     workspace_name: format!("{session}:{index}"),
   })
+}
+
+/// The tmux whose client is TTY, as an ADDR, among the servers at the
+/// human's sockets
+#[cfg(unix)]
+pub fn serving(tty: &str) -> Option<String> {
+  let tmp = std::env::var_os("TMUX_TMPDIR").unwrap_or("/tmp".into());
+  // SAFETY: getuid only reads the process's uid
+  let uid = unsafe { libc::getuid() };
+  let sockets = std::fs::read_dir(Path::new(&tmp).join(format!("tmux-{uid}")));
+  sockets.ok()?.flatten().find_map(|socket| {
+    let socket = socket.path().to_string_lossy().into_owned();
+    let clients = Tmux::new(&socket)
+      .tmux(&["list-clients", "-F", "#{client_tty}"], None)
+      .ok()?;
+    clients
+      .lines()
+      .any(|client| client == tty)
+      .then(|| format!("tmux:{socket}"))
+  })
+}
+
+#[cfg(not(unix))]
+pub fn serving(_tty: &str) -> Option<String> {
+  None
 }
 
 impl Tmux {

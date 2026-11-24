@@ -27,6 +27,7 @@ Commands:
                                  minimized
   pick                           Let the human pick a window, print its id
   screen WINDOW                  Print what WINDOW shows, as PNG
+  inside WINDOW                  The wm running in WINDOW, as JSON, or null
 
 TTY picks a multiplexer's client; it defaults to the one used last.";
 
@@ -240,6 +241,23 @@ pub fn open(addr: &str) -> Result<Box<dyn Wm>> {
   }
 }
 
+/// The wm running in WINDOW of WM, with the CLIENT that shows it there: a
+/// tmux whose client is the window's terminal, as a pane of another tmux
+/// may be
+fn inside(wm: &dyn Wm, window: &str) -> Result<Value> {
+  let windows = wm.windows()?;
+  let tty = windows
+    .iter()
+    .find(|w| w.id == window)
+    .ok_or_else(|| Error::Gone(format!("no window {window}")))?
+    .tty
+    .as_deref();
+  Ok(match tty.and_then(tmux::serving) {
+    Some(addr) => json!({"addr": addr, "client": tty}),
+    None => Value::Null,
+  })
+}
+
 /// The nearest visible window of the same workspace in DIRECTION: it lies
 /// wholly on that side and overlaps window across it.
 fn neighbor<'a>(
@@ -368,6 +386,7 @@ pub fn run(
       format!("{window} is {state}")
     }
     ("pick", []) => wm.pick()?,
+    ("inside", [window]) => inside(wm.as_ref(), window)?.to_string(),
     _ => {
       return Err(Error::Usage(
         format!("unknown command or wrong arguments: {command}"),
