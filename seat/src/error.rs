@@ -7,6 +7,7 @@ pub enum Error {
   /// Wrong arguments; the usage to print with the message
   Usage(String, &'static str),
   Failed(String),
+  Gone(String),
 }
 
 impl Error {
@@ -14,6 +15,7 @@ impl Error {
   pub fn status(&self) -> u8 {
     match self {
       Error::Usage(..) | Error::Failed(_) => 1,
+      Error::Gone(_) => 4,
     }
   }
 }
@@ -22,7 +24,7 @@ impl fmt::Display for Error {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       Error::Usage(message, usage) => write!(f, "{message}\n\n{usage}"),
-      Error::Failed(message) => write!(f, "{message}"),
+      Error::Failed(message) | Error::Gone(message) => write!(f, "{message}"),
     }
   }
 }

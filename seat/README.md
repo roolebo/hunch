@@ -35,9 +35,9 @@ Commands of the service itself:
 To try it by hand:
 
     hunch-seat serve &
-    hunch-seat wms
+    hunch-seat wm "tmux:$(tmux display -p '#{socket_path}')" windows
 
-To test it, with jq installed:
+To test it, with tmux and jq installed:
 
     cargo test
     test/run

@@ -5,6 +5,10 @@ edition = "2024"
 description = "Serves a host's seat to hunch: dictation, its wms and compute"
 license = "MIT"
 
+[features]
+default = ["wm"]
+wm = []
+
 [dependencies]
 serde_json = "1"
 

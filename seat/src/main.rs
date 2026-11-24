@@ -4,6 +4,8 @@
 mod error;
 #[cfg(unix)]
 mod service;
+#[cfg(feature = "wm")]
+mod wm;
 
 use error::{Error, Result};
 use std::process::ExitCode;
@@ -13,6 +15,9 @@ Usage: hunch-seat ROLE [ADDR] COMMAND [ARGUMENTS]
        hunch-seat roles
        hunch-seat wms
        hunch-seat serve
+
+Roles:
+  wm ADDR       a window manager, e.g. tmux:/tmp/tmux-1000/default
 
 hunch-seat ROLE --help lists the commands of ROLE.
 roles prints the roles this hunch-seat is built with.
@@ -30,6 +35,10 @@ fn run(args: &[String]) -> Result<()> {
     }
     #[cfg(unix)]
     [command] if command == "serve" => service::serve(here, start)?,
+    #[cfg(feature = "wm")]
+    [role, rest @ ..] if role == "wm" => {
+      wm::run(rest, &mut std::io::stdin(), &mut std::io::stdout())?
+    }
     [] => return Err(Error::Usage("missing ROLE".into(), USAGE)),
     [role, ..] => {
       return Err(Error::Usage(
@@ -60,7 +69,10 @@ fn here(args: &[String]) -> Option<service::Here> {
 fn start() {}
 
 fn roles() -> Vec<&'static str> {
-  Vec::new()
+  [cfg!(feature = "wm").then_some("wm")]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn wms() -> Vec<&'static str> {

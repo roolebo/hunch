@@ -2,9 +2,10 @@
 #
 # test/run: end-to-end tests of hunch-seat, through its service.
 #
-# Each test gets its own HOME, XDG directories and service, all under a
-# temporary directory: the human's own service and settings stay
-# untouched.
+# Each test gets its own HOME, XDG directories, service and tmux servers,
+# all under a temporary directory: the human's own service and settings
+# stay untouched. A test that needs a client attached to tmux runs it in
+# a second tmux server, as a terminal.
 #
 
 set -e
@@ -63,6 +64,8 @@ serve() {
 
 teardown() {
   stop
+  t kill-server 2> /dev/null || true
+  terminal kill-server 2> /dev/null || true
 }
 
 stop() {
@@ -70,6 +73,53 @@ stop() {
   kill "$SERVICE" 2> /dev/null || true
   wait "$SERVICE" 2> /dev/null || true
   SERVICE=
+}
+
+# tmux, the one the tests ask hunch-seat about
+t() {
+  tmux -f /dev/null -S "$TMUX_SOCKET" "$@"
+}
+
+# tmux, the terminal a client of t runs in
+terminal() {
+  tmux -f /dev/null -S "$TEST_DIR/terminal" "$@"
+}
+
+# Start t with session one: ARGS run in its first pane
+session() {
+  t new-session -d -s one -x 80 -y 24 "$@"
+}
+
+# Attach a client to t, as a human in a terminal does
+attach() {
+  terminal new-session -d -x 80 -y 24 \
+    "TMUX= tmux -f /dev/null -S '$TMUX_SOCKET' attach -t one"
+  wait_for attached || die "No client attached"
+}
+
+attached() {
+  [ -n "$(t list-clients)" ]
+}
+
+# Whether PANE runs PROGRAM in the foreground
+runs() {
+  [ "$(t display-message -p -t "$1" '#{pane_current_command}')" == "$2" ]
+}
+
+# Whether PANE asked for bracketed paste. tmux before 3.8 doesn't say,
+# and tells nothing rather than 0.
+pasting() {
+  [ "$(t display-message -p -t "$1" '#{bracket_paste_flag}')" != 0 ]
+}
+
+wm() {
+  call wm "tmux:$TMUX_SOCKET" "$@"
+}
+
+# A field of each window, one per line
+windows() {
+  wm windows
+  jq -r ".[] | .id + \" \" + (.$1 | tostring)" <<< "$OUT"
 }
 
 check() {
@@ -106,6 +156,136 @@ test_wms() {
   check wms "$OUT" '[]'
 }
 
+test_tmux_windows() {
+  session
+  t split-window -h -t one
+  t new-window -t one
+  wm windows
+  check status "$STATUS" 0
+  check ids "$(jq -r '.[].id' <<< "$OUT" | sort)" \
+    "$(t list-panes -a -F '#{pane_id}' | sort)"
+  check fields "$(jq -r '.[0] | keys | join(" ")' <<< "$OUT")" \
+    'app focused height host id pid state title tty visible width workspace x y'
+  # Nobody looks at a session without a client
+  check visible "$(jq '[.[] | select(.visible)] | length' <<< "$OUT")" 0
+  attach
+  check visible "$(windows visible | sort)" "%0 false
+%1 false
+%2 true"
+  check focused "$(windows focused | grep true)" "%2 true"
+}
+
+test_tmux_context() {
+  session
+  t split-window -t one
+  attach
+  wm context
+  check status "$STATUS" 0
+  check window "$(jq -r .window.id <<< "$OUT")" %1
+  check workspace "$(jq -r .workspace.name <<< "$OUT")" one:0
+  t select-pane -t %0
+  wm context --client "$(t list-clients -F '#{client_tty}')"
+  check client "$(jq -r .window.id <<< "$OUT")" %0
+}
+
+test_tmux_context_without_client() {
+  session
+  wm context
+  check status "$STATUS" 1
+  check_has err "$ERR" "no client is attached"
+}
+
+test_tmux_send() {
+  session "cat > '$TEST_DIR/typed'"
+  wait_for runs %0 cat || die "The program didn't start"
+  printf 'echo hi; rm -rf x' > "$IN"
+  wm send %0
+  check status "$STATUS" 0
+  : > "$IN"
+  wm submit %0
+  check status "$STATUS" 0
+  wait_for [ -s "$TEST_DIR/typed" ] || true
+  check typed "$(< "$TEST_DIR/typed")" "echo hi; rm -rf x"
+}
+
+test_tmux_send_brackets_a_paste() {
+  # A program that asks for bracketed paste, as shells and Vim do
+  session "printf '\\033[?2004h'; exec head -1 > '$TEST_DIR/typed'"
+  wait_for runs %0 head || die "The program didn't start"
+  wait_for pasting %0 || die "No bracketed paste in %0"
+  printf 'hi' > "$IN"
+  wm send %0
+  : > "$IN"
+  wm submit %0
+  wait_for [ -s "$TEST_DIR/typed" ] || true
+  check typed "$(cat -v "$TEST_DIR/typed")" '^[[200~hi^[[201~'
+}
+
+test_tmux_gone() {
+  session
+  wm submit %9
+  check status "$STATUS" 4
+  check_has err "$ERR" "can't find pane"
+}
+
+test_tmux_move() {
+  session
+  t split-window -h -t one
+  # Only a pane the human sees is a neighbour
+  attach
+  wm move %0 right
+  check status "$STATUS" 0
+  check out "$OUT" "swapped %0 and %1"
+  check order "$(windows x | sort -k2 -n | cut -d' ' -f1 | paste -sd' ' -)" \
+    "%1 %0"
+  wm move %0 right
+  check status "$STATUS" 1
+  check_has err "$ERR" "no window right of %0"
+}
+
+test_tmux_state() {
+  session
+  t split-window -t one
+  attach
+  wm state %0 maximized
+  check status "$STATUS" 0
+  check state "$(windows state)" "%0 maximized
+%1 normal"
+  check visible "$(windows visible)" "%0 true
+%1 false"
+  wm state %0 normal
+  check state "$(windows state)" "%0 normal
+%1 normal"
+  wm state %0 minimized
+  check status "$STATUS" 1
+  check_has err "$ERR" "only normal and maximized"
+}
+
+test_tmux_focus() {
+  session
+  t new-window -t one
+  attach
+  wm focus %0
+  check status "$STATUS" 0
+  wm context
+  check window "$(jq -r .window.id <<< "$OUT")" %0
+}
+
+test_wm_usage() {
+  call wm
+  check status "$STATUS" 1
+  check_has err "$ERR" "missing ADDR or COMMAND"
+  call wm nowhere windows
+  check status "$STATUS" 1
+  check_has err "$ERR" "ADDR has no SCHEME"
+  call wm x11: windows
+  check status "$STATUS" 1
+  check_has err "$ERR" "no wm of SCHEME x11"
+  wm state %0 sideways
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown STATE"
+}
+
 test_service_runs_once() {
   call serve
   check status "$STATUS" 1
@@ -127,12 +307,37 @@ test_service_is_needed() {
   check_has err "$ERR" "start it with hunch-seat serve"
 }
 
+test_service_ends_the_command_of_a_gone_client() {
+  local sent
+  session
+  # A send that waits for its text, and its client that goes away
+  sleep 60 | "$HOST" wm "tmux:$TMUX_SOCKET" send %0 &
+  sent="send %0"
+  wait_for [ "$(running "$sent")" == 2 ] || true
+  check served "$(running "$sent")" 2
+  kill $!
+  wait_for none "$sent" || true
+  check ended "$(running "$sent")" 0
+  pkill -f "sleep 60" || true
+}
+
+# How many processes run COMMAND: the client, and the command the
+# service runs for it
+running() {
+  pgrep -f "$1" | wc -l | tr -d ' '
+}
+
+none() {
+  [ "$(running "$1")" == 0 ]
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))
   TEST=$1
   TEST_DIR=$DIR/$N
   IN=$TEST_DIR/in
+  TMUX_SOCKET=$TEST_DIR/tmux
   mkdir -p "$TEST_DIR/home" "$TEST_DIR/run" "$TEST_DIR/config/hunch" \
     "$TEST_DIR/state"
   : > "$IN"
@@ -159,8 +364,9 @@ if [ "$1" == "-h" -o "$1" == "--help" ]; then
   exit 0
 fi
 command -v jq > /dev/null || die "jq is not installed"
+command -v tmux > /dev/null || die "tmux is not installed"
 trap cleanup EXIT
-unset HUNCH_SEAT_SERVED
+unset HUNCH_SEAT_SERVED TMUX
 (cd "$ROOT" && cargo build -q) || die "Can't build hunch-seat"
 mkdir "$DIR/bin"
 ln -s "$HOST" "$DIR/bin/hunch-seat"
