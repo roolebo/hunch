@@ -1,8 +1,8 @@
 use hunch::device::{self, Inference, OsKeys};
-use hunch::host::{root, serve};
-use hunch::registry::Tmux;
+use hunch::host::{root, serve, sibling};
+use hunch::registry::{Program, Tmux};
 use hunch::srv::Srv;
-use hunch::tree::{ByActivity, Current, Remote, Workspace};
+use hunch::tree::{ByActivity, Current, Remote, Union, Workspace};
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixListener;
@@ -43,6 +43,12 @@ fn run() -> std::io::Result<()> {
   });
 
   let tmux = Arc::new(Tmux);
+  let seat = || {
+    device::seat(Box::new(Program {
+      handler: sibling("hunch-seat").to_string_lossy().into(),
+      addr: "seat".into(),
+    }))
+  };
   // The host's, in every workspace, as its namespace mounts it;
   // hunch-seat serves local:
   let inference = || {
@@ -62,22 +68,28 @@ fn run() -> std::io::Result<()> {
       "no browser: Firefox serves it while hunch's extension runs",
     )
   };
-  // What's on the seat: the activity's editor, which serves itself, and
-  // the browser
+  // The seat's own files, and what's on it: the activity's editor, which
+  // serves itself, and the browser
   let host = Workspace::new(vec![
     ("inference", Box::new(inference())),
     (
       "seat",
-      Box::new(Workspace::new(vec![("browser", Box::new(browser()))])),
+      Box::new(Union::new(vec![
+        Box::new(seat()),
+        Box::new(Workspace::new(vec![("browser", Box::new(browser()))])),
+      ])),
     ),
   ]);
   let activity = Workspace::new(vec![
     ("inference", Box::new(inference())),
     (
       "seat",
-      Box::new(Workspace::new(vec![
-        ("editor", Box::new(device::editor(srv, root::tmp()))),
-        ("browser", Box::new(Current::new(browser(), tmux))),
+      Box::new(Union::new(vec![
+        Box::new(Current::new(seat(), tmux.clone())),
+        Box::new(Workspace::new(vec![
+          ("editor", Box::new(device::editor(srv, root::tmp()))),
+          ("browser", Box::new(Current::new(browser(), tmux))),
+        ])),
       ])),
     ),
   ]);

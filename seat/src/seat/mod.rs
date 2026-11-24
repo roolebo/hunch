@@ -43,6 +43,9 @@ Commands:
   eject                 Free the model's memory now
   target TARGET         Send dictation to TARGET
   redirect              Let the human pick the window dictation goes to
+  wm [ADDR] COMMAND     Run COMMAND of the seat's wm, or of ADDR, a wm
+                        inside one of its windows, as hunch-seat wm does:
+                        context, windows, screen or inside
   submit on|off         Press Enter after the text, or not
   preload on|off        Load the model at start, or at the first dictation
   warm MINUTES|always   Keep the model in GPU memory this long while idle,
@@ -615,7 +618,7 @@ fn set(apply: impl FnOnce(&mut Settings)) {
 /// Answers a seat command in the service, writing to the client's stdout
 pub fn run(
   args: &[String],
-  _input: &mut File,
+  input: &mut File,
   out: &mut File,
   gone: &AtomicBool,
 ) -> Result<()> {
@@ -628,6 +631,25 @@ pub fn run(
       .clone()
       .ok_or_else(|| failed("nothing dictated since the service started"))?,
     ["watch"] => return watch(out, gone),
+    // Only what seat/wm/ reads: other programs get the service's grant
+    // to see windows, never to act in them
+    ["wm", rest @ ..] => {
+      // The seat's wm, or ADDR's, a wm inside one of its windows
+      let (addr, rest) = match rest {
+        [addr, rest @ ..] if addr.contains(':') => (*addr, rest),
+        _ => (WM, rest),
+      };
+      let ["context" | "windows" | "screen" | "inside", ..] = rest else {
+        return Err(failed(
+          "seat wm runs context, windows, screen or inside of a wm",
+        ));
+      };
+      let args: Vec<String> = std::iter::once(addr)
+        .chain(rest.iter().copied())
+        .map(String::from)
+        .collect();
+      return wm::run(&args, input, out);
+    }
     ["menu"] => view().menu().to_string(),
     // For the tray, which reads the seat's files
     ["needs"] => crate::listed(false, true).to_string(),

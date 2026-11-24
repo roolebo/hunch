@@ -38,10 +38,12 @@ Terms:
 A workspace has one device of each kind:
 
     errstr      why the last action failed
-    seat/       where the human sits, and what's on it:
+    seat/       where the human sits, as SEAT.md says; its dictation in
+                the current activity only
       editor/   the activity's editor, as PROTOCOL.md says
       browser/  the browser, as BROWSER.md says; in the current
                 activity only
+      wm/       the seat's windows, as SEAT.md says
     inference/  the models the namespace mounts, as INFERENCE.md says
 
 Buffers:
@@ -133,9 +135,9 @@ The owner listens on $XDG_RUNTIME_DIR/hunch/sock/hunch.sock; where
 XDG_RUNTIME_DIR isn't set, as on macOS, under $XDG_CACHE_HOME or
 ~/.cache instead. A tool attaches with the activity's id as aname. Attached
 without one, it gets the host's workspace: the devices that belong to no
-activity, the browser and inference. From the shell, `hunch-9p` does it,
-and starts hunch-host if it isn't running; in tmux, its window is the
-activity:
+activity, the browser, inference and the seat; the tray draws the seat
+from there. From the shell, `hunch-9p` does it, and starts hunch-host if
+it isn't running; in tmux, its window is the activity:
 
     hunch-9p read seat/editor/context
 

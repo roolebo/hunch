@@ -136,6 +136,66 @@ impl Tree for Workspace {
   }
 }
 
+/// Trees on one directory, as Plan 9 binds them: a name is the first
+/// tree's that has it, and the directory lists what all of them have
+pub struct Union {
+  trees: Vec<Box<dyn Tree>>,
+}
+
+impl Union {
+  pub fn new(trees: Vec<Box<dyn Tree>>) -> Self {
+    Union { trees }
+  }
+
+  /// The first tree that has PATH
+  fn tree(&self, activity: &str, path: &[&str]) -> Result<&dyn Tree> {
+    let mut found = Err(no_such());
+    for tree in &self.trees {
+      match tree.kind(activity, path) {
+        Ok(_) => return Ok(tree.as_ref()),
+        Err(e) if found.is_err() => found = Err(e),
+        Err(_) => {}
+      }
+    }
+    found
+  }
+}
+
+impl Tree for Union {
+  fn kind(&self, activity: &str, path: &[&str]) -> Result<Kind> {
+    self.tree(activity, path)?.kind(activity, path)
+  }
+
+  fn list(&self, activity: &str, path: &[&str]) -> Result<Vec<(String, Kind)>> {
+    if !path.is_empty() {
+      return self.tree(activity, path)?.list(activity, path);
+    }
+    self.tree(activity, path)?;
+    let mut entries: Vec<(String, Kind)> = Vec::new();
+    for tree in &self.trees {
+      for entry in tree.list(activity, path).unwrap_or_default() {
+        if !entries.iter().any(|(name, _)| *name == entry.0) {
+          entries.push(entry);
+        }
+      }
+    }
+    Ok(entries)
+  }
+
+  fn read(
+    &self,
+    activity: &str,
+    path: &[&str],
+    input: Option<&[u8]>,
+  ) -> Result<Vec<u8>> {
+    self.tree(activity, path)?.read(activity, path, input)
+  }
+
+  fn write(&self, activity: &str, path: &[&str], data: &[u8]) -> Result<()> {
+    self.tree(activity, path)?.write(activity, path, data)
+  }
+}
+
 /// The workspaces of TREE.md's Access: the host's to an attach without a
 /// activity, an activity's to an attach with its id
 pub struct ByActivity {

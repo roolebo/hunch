@@ -8,8 +8,8 @@ use hunch::client::Client;
 use hunch::device;
 use hunch::p9::errno;
 use hunch::registry::{Handler, Registry};
+use hunch::tree::{ByActivity, Error, Result, Workspace};
 use hunch::tree::{Current, Focus};
-use hunch::tree::{Error, Result, Workspace};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
@@ -101,35 +101,63 @@ impl Handler for FakeEditor {
 }
 
 /// Answers each command with its arguments, so a test sees which one ran,
-/// save context: a browser of BROWSER.md with tab 7 active
-struct FakeBrowser {
+/// save those that answer JSON: a browser of BROWSER.md with tab 7
+/// active, or a seat whose wm has windows 12 and 13; tmux a runs in 12,
+/// and tmux b in a's pane %1
+struct Echo {
   calls: Calls,
+  addr: &'static str,
 }
 
-impl Handler for FakeBrowser {
+impl Handler for Echo {
   fn run(&self, args: &[&OsStr]) -> Result<Vec<u8>> {
     let s: Vec<String> = args
       .iter()
       .map(|a| a.to_string_lossy().into_owned())
       .collect();
     self.calls.lock().unwrap().push(s.clone());
-    if s == ["context"] {
-      let context =
-        serde_json::json!({"tab": 7, "title": "Example", "selection": null});
-      return Ok(context.to_string().into_bytes());
-    }
-    Ok(format!("{}\n", s.join(" ")).into_bytes())
+    let json = match s.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+      ["context"] if self.addr() == "browser" => {
+        serde_json::json!({"tab": 7, "title": "Example", "selection": null})
+      }
+      ["wm", "context"] => serde_json::json!({"window": {"id": "12"}}),
+      ["wm", "windows"] => serde_json::json!([{"id": "12"}, {"id": "13"}]),
+      ["wm", "inside", "12"] => {
+        serde_json::json!({"addr": "tmux:/a", "client": "/dev/ttys1"})
+      }
+      ["wm", "tmux:/a", "context", "--client", "/dev/ttys1"] => {
+        serde_json::json!({"window": {"id": "%1"}, "workspace": {"id": "@1"}})
+      }
+      // Only the panes its client shows: those of tmux window @1
+      ["wm", "tmux:/a", "windows"] => serde_json::json!([
+        {"id": "%1", "workspace": "@1"},
+        {"id": "%2", "workspace": "@2"}
+      ]),
+      ["wm", "tmux:/a", "inside", "%1"] => {
+        serde_json::json!({"addr": "tmux:/b", "client": "/dev/ttys2"})
+      }
+      ["wm", "tmux:/b", "context", "--client", "/dev/ttys2"] => {
+        serde_json::json!({"window": {"id": "%7"}, "workspace": {"id": "@9"}})
+      }
+      ["wm", "tmux:/b", "windows"] => {
+        serde_json::json!([{"id": "%7", "workspace": "@9"}])
+      }
+      ["wm", .., "inside", _] => serde_json::Value::Null,
+      _ => return Ok(format!("{}\n", s.join(" ")).into_bytes()),
+    };
+    Ok(json.to_string().into_bytes())
   }
 
   fn addr(&self) -> &str {
-    "fake-browser"
+    self.addr
   }
 }
 
 /// Activity @1 has an editor, @2 has none; the human is in ACTIVE
 struct Fakes {
   editor: Arc<FakeEditor>,
-  browser: Arc<FakeBrowser>,
+  browser: Arc<Echo>,
+  seat: Arc<Echo>,
   current: Mutex<Option<String>>,
 }
 
@@ -167,7 +195,7 @@ impl Focus for Fakes {
 
 struct Host {
   fakes: Arc<Fakes>,
-  workspace: Arc<Workspace>,
+  workspace: Arc<ByActivity>,
   calls: Calls,
 }
 
@@ -192,21 +220,32 @@ fn host() -> Host {
       unsaved: vec!["/src/dirty.c".to_string()],
       calls: calls.clone(),
     }),
-    browser: Arc::new(FakeBrowser {
+    browser: Arc::new(Echo {
       calls: calls.clone(),
+      addr: "browser",
+    }),
+    seat: Arc::new(Echo {
+      calls: calls.clone(),
+      addr: "seat",
     }),
     current: Mutex::new(Some("@1".to_string())),
   });
-  let workspace = Workspace::new(vec![
+  let seat = || device::seat(Box::new(Shared(fakes.seat.clone())));
+  let host = Workspace::new(vec![
+    ("browser", Box::new(device::browser(fakes.clone()))),
+    ("seat", Box::new(seat())),
+  ]);
+  let activity = Workspace::new(vec![
     ("editor", Box::new(device::editor(fakes.clone(), tmp()))),
     (
       "browser",
       Box::new(Current::new(device::browser(fakes.clone()), fakes.clone())),
     ),
+    ("seat", Box::new(Current::new(seat(), fakes.clone()))),
   ]);
   Host {
     fakes,
-    workspace: Arc::new(workspace),
+    workspace: Arc::new(ByActivity::new(Box::new(host), Box::new(activity))),
     calls,
   }
 }
@@ -242,6 +281,7 @@ fn every_device_obeys_the_tree() {
   number(&mut c, "/src/a.c");
   conform::conforms(&mut c);
   conform::conforms(&mut h.attach("@2"));
+  conform::conforms(&mut h.attach(""));
 }
 
 #[test]
@@ -249,7 +289,7 @@ fn a_task_sees_only_the_devices_it_has() {
   let h = host();
   assert_eq!(
     h.attach("@1").ls("").unwrap(),
-    ["errstr", "editor/", "browser/"]
+    ["errstr", "editor/", "browser/", "seat/"]
   );
   assert_eq!(h.attach("@2").ls("").unwrap(), ["errstr"]);
 }
@@ -412,4 +452,81 @@ fn dom_answers_for_a_selector() {
     b"dom #main p\n"
   );
   assert_eq!(c.read("browser/1/dom").unwrap(), b"dom\n");
+}
+
+#[test]
+fn windows_are_the_wms_buffers() {
+  let h = host();
+  let mut c = h.attach("");
+  let context: serde_json::Value =
+    serde_json::from_slice(&c.read("seat/wm/context").unwrap()).unwrap();
+  assert_eq!(context["buffer"], "12");
+  assert_eq!(c.read("seat/wm/index").unwrap(), b"1\t12\n2\t13\n");
+  assert_eq!(c.read("seat/wm/2/body").unwrap(), b"wm screen 13\n");
+  assert_eq!(c.ls("seat").unwrap().last().unwrap(), "wm/");
+}
+
+#[test]
+fn a_window_holds_the_windows_of_the_wm_in_it() {
+  let h = host();
+  let mut c = h.attach("");
+  c.read("seat/wm/index").unwrap();
+  assert_eq!(c.read("seat/wm/1/index").unwrap(), b"1\t%1\n");
+  // tmux in a pane of tmux, in a window of the seat
+  assert_eq!(c.read("seat/wm/1/1/index").unwrap(), b"1\t%7\n");
+  assert_eq!(c.read("seat/wm/1/1/1/name").unwrap(), b"%7\n");
+  let context: serde_json::Value =
+    serde_json::from_slice(&c.read("seat/wm/1/1/context").unwrap()).unwrap();
+  assert_eq!(context["buffer"], "%7");
+  assert_eq!(
+    c.ls("seat/wm/1").unwrap(),
+    ["name", "body", "context", "selection", "index", "1/"]
+  );
+  assert_eq!(c.ls("seat/wm/2").unwrap(), ["name", "body"]);
+}
+
+#[test]
+fn the_host_has_the_devices_of_no_activity() {
+  let h = host();
+  assert_eq!(
+    h.attach("").ls("").unwrap(),
+    ["errstr", "browser/", "seat/"]
+  );
+  *h.fakes.current.lock().unwrap() = None;
+  assert_eq!(h.attach("").read("seat/menu").unwrap(), b"menu\n");
+  assert_eq!(h.attach("").read("browser/index").unwrap(), b"1\t7\n");
+}
+
+#[test]
+fn the_seat_is_in_the_current_task_only() {
+  let h = host();
+  assert_eq!(h.attach("@1").read("seat/context").unwrap(), b"context\n");
+  *h.fakes.current.lock().unwrap() = Some("@2".into());
+  let e = h.attach("@1").read("seat/context").unwrap_err();
+  assert_eq!(e.errno, errno::ENOENT);
+}
+
+#[test]
+fn each_line_of_ctl_is_a_command() {
+  let h = host();
+  let mut c = h.attach("");
+  c.write("seat/ctl", b"target focus\nredirect\n").unwrap();
+  let calls = h.calls.lock().unwrap().clone();
+  assert_eq!(
+    calls[calls.len() - 2..],
+    [vec!["target", "focus"], vec!["redirect"]]
+  );
+  drop(calls);
+  assert_eq!(c.write("seat/ctl", b"\n").unwrap_err().errno, errno::EINVAL);
+  assert_eq!(c.write("seat/menu", b"x").unwrap_err().errno, errno::EACCES);
+}
+
+#[test]
+fn the_tray_reads_and_sets_the_seat_through_its_files() {
+  let h = host();
+  let mut c = h.attach("");
+  assert_eq!(c.read("seat/devices").unwrap(), b"devices\n");
+  assert_eq!(c.read("seat/needs").unwrap(), b"needs\n");
+  c.write("seat/ctl", b"submit off\n").unwrap();
+  assert_eq!(h.last_call(), ["submit", "off"]);
 }

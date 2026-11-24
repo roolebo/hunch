@@ -190,6 +190,11 @@ Specified in [skills/hunch/TREE.md](skills/hunch/TREE.md).
 
 Specified in [skills/hunch/PROTOCOL.md](skills/hunch/PROTOCOL.md).
 
+## Seat protocol
+
+Specified in [skills/hunch/SEAT.md](skills/hunch/SEAT.md);
+[seat](seat) serves it.
+
 ## Browser protocol
 
 Specified in [skills/hunch/BROWSER.md](skills/hunch/BROWSER.md).

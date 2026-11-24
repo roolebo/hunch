@@ -5,8 +5,8 @@ mod common;
 mod conform;
 
 use hunch::tree::{
-  ANSWER, ByActivity, Current, Focus, Kind, Remote, Result, Tree, Workspace,
-  no_such,
+  ANSWER, ByActivity, Current, Focus, Kind, Remote, Result, Tree, Union,
+  Workspace, no_such,
 };
 use std::sync::{Arc, Mutex};
 
@@ -148,6 +148,32 @@ fn a_device_outside_the_current_task_is_no_device() {
     );
     assert_eq!(with.list("@1", &[]), without.list("@1", &[]));
   }
+}
+
+#[test]
+fn a_union_is_each_tree_under_its_own_names() {
+  let union = Union::new(vec![
+    Box::new(Workspace::new(vec![("x", Box::new(Note::default()))])),
+    Box::new(Workspace::new(vec![
+      ("x", Box::new(Note::default())),
+      ("y", Box::new(Note::default())),
+    ])),
+  ]);
+  let first = Workspace::new(vec![("x", Box::new(Note::default()))]);
+  let second = Workspace::new(vec![("y", Box::new(Note::default()))]);
+  // A name both have is the first tree's
+  assert_eq!(observe(&union, "@1", &["x"]), observe(&first, "@1", &["x"]));
+  assert_eq!(
+    observe(&union, "@1", &["y"]),
+    observe(&second, "@1", &["y"])
+  );
+  let names: Vec<String> = union
+    .list("@1", &[])
+    .unwrap()
+    .into_iter()
+    .map(|(n, _)| n)
+    .collect();
+  assert_eq!(names, ["x", "y"]);
 }
 
 #[test]
