@@ -1,10 +1,13 @@
+use hunch::device;
 use hunch::host::{root, serve};
+use hunch::srv::Srv;
 use hunch::tree::Workspace;
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixListener;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::thread;
 
 const USAGE: &str = "\
 Usage: hunch-host
@@ -25,9 +28,25 @@ fn run() -> std::io::Result<()> {
   let listener = UnixListener::bind(&socket)?;
   fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
   let uid = fs::metadata(root::root())?.uid();
+  let srv_socket = root::srv();
+  match fs::remove_file(&srv_socket) {
+    Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+    _ => {}
+  }
+  let srv = Arc::new(Srv::default());
+  let srv_listener = UnixListener::bind(&srv_socket)?;
+  fs::set_permissions(&srv_socket, fs::Permissions::from_mode(0o600))?;
+  thread::spawn({
+    let srv = srv.clone();
+    move || srv.serve(srv_listener)
+  });
 
-  // The assembly: no devices yet
-  let workspace = Workspace::new(Vec::new());
+  // What's on the seat: the activity's editor, which serves itself
+  let seat = Workspace::new(vec![(
+    "editor",
+    Box::new(device::editor(srv, root::tmp())),
+  )]);
+  let workspace = Workspace::new(vec![("seat", Box::new(seat))]);
   eprintln!("hunch-host: serving at {}", socket.display());
   serve(listener, Arc::new(workspace), uid);
   Ok(())

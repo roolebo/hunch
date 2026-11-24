@@ -23,6 +23,11 @@ pub fn socket() -> PathBuf {
   root().join("sock").join("hunch.sock")
 }
 
+/// Where devices serve themselves, as TREE.md's Serve says
+pub fn srv() -> PathBuf {
+  root().join("sock").join("srv.sock")
+}
+
 pub fn log() -> PathBuf {
   root().join("hunch-host.log")
 }

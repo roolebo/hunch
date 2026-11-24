@@ -1,10 +1,12 @@
 use hunch::client::Client;
 use hunch::host::root;
 use hunch::p9::errno;
+use hunch::registry::UNSAVED;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Command, ExitCode, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
@@ -17,13 +19,15 @@ Commands:
   write PATH    Write stdin to the file
   rdwr PATH     Write stdin to the file, then print its answer
   ls PATH       List the directory, a directory's name with a / after it
+  serve KIND    Serve the device that runs this, of KIND, e.g. editor, to
+                the workspace, until stdin ends: it gets the device's
+                commands on stdout and answers on stdin, as TREE.md's
+                Serve says
 
 Reaches ACTIVITY's workspace in hunch-host: in tmux, by default, the
 window's. Starts hunch-host if it isn't running. Exits with 3 when the
 file is busy, e.g. the human has unsaved changes in the editor.";
 
-/// PROTOCOL.md's exit status for unsaved changes
-const BUSY: u8 = 3;
 /// START_TRIES × START_WAIT: how long a hunch-host this starts may take to
 /// listen
 const START_TRIES: u32 = 50;
@@ -58,9 +62,9 @@ fn start() -> io::Result<()> {
   Ok(())
 }
 
-fn connect() -> io::Result<UnixStream> {
-  let socket = root::socket();
-  match UnixStream::connect(&socket) {
+/// The connection to hunch-host's SOCKET, after starting it if needed
+fn connect(socket: &Path) -> io::Result<UnixStream> {
+  match UnixStream::connect(socket) {
     Ok(s) => return Ok(s),
     Err(e)
       if matches!(
@@ -72,7 +76,7 @@ fn connect() -> io::Result<UnixStream> {
   start()?;
   for _ in 0..START_TRIES {
     sleep(START_WAIT);
-    if let Ok(s) = UnixStream::connect(&socket) {
+    if let Ok(s) = UnixStream::connect(socket) {
       return Ok(s);
     }
   }
@@ -81,6 +85,23 @@ fn connect() -> io::Result<UnixStream> {
     socket.display(),
     root::log().display()
   )))
+}
+
+/// Hands stdin and stdout to hunch-host as the device of KIND, until
+/// either end closes
+fn serve(activity: &str, kind: &str) -> io::Result<()> {
+  let stream = connect(&root::srv())?;
+  let header = serde_json::json!({"activity": activity, "kind": kind});
+  writeln!(&stream, "{header}")?;
+  let mut to_host = stream.try_clone()?;
+  let sending = std::thread::spawn(move || {
+    let copied = io::copy(&mut io::stdin(), &mut to_host);
+    let _ = to_host.shutdown(std::net::Shutdown::Write);
+    copied
+  });
+  io::copy(&mut &stream, &mut io::stdout())?;
+  drop(sending);
+  Ok(())
 }
 
 fn stdin() -> io::Result<Vec<u8>> {
@@ -126,7 +147,13 @@ fn main() -> ExitCode {
     eprintln!("hunch-9p: {what}");
     ExitCode::FAILURE
   };
-  let stream = match connect() {
+  if command == "serve" {
+    return match serve(&activity, path) {
+      Ok(()) => ExitCode::SUCCESS,
+      Err(e) => fail(format!("{path}: {e}")),
+    };
+  }
+  let stream = match connect(&root::socket()) {
     Ok(s) => s,
     Err(e) => return fail(e.to_string()),
   };
@@ -171,7 +198,7 @@ fn main() -> ExitCode {
       };
       eprintln!("hunch-9p: {path}: {}{words}", errno::describe(e.errno));
       if e.errno == errno::EBUSY {
-        ExitCode::from(BUSY)
+        ExitCode::from(UNSAVED)
       } else {
         ExitCode::FAILURE
       }

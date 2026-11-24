@@ -3,6 +3,10 @@
 //! the shell. skills/hunch/TREE.md specifies both.
 
 pub mod client;
+pub mod device;
 pub mod host;
 pub mod p9;
+pub mod peer;
+pub mod registry;
+pub mod srv;
 pub mod tree;
