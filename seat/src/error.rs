@@ -11,6 +11,9 @@ pub enum Error {
   // Only macOS lets the human pick so far
   #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
   Cancelled(String),
+  /// A MODEL is unknown, or doesn't take the TYPE asked for
+  #[cfg_attr(not(feature = "inference"), allow(dead_code))]
+  Unknown(String),
 }
 
 impl Error {
@@ -18,7 +21,7 @@ impl Error {
   pub fn status(&self) -> u8 {
     match self {
       Error::Usage(..) | Error::Failed(_) => 1,
-      Error::Gone(_) => 4,
+      Error::Gone(_) | Error::Unknown(_) => 4,
       Error::Cancelled(_) => 5,
     }
   }
@@ -30,7 +33,8 @@ impl fmt::Display for Error {
       Error::Usage(message, usage) => write!(f, "{message}\n\n{usage}"),
       Error::Failed(message)
       | Error::Gone(message)
-      | Error::Cancelled(message) => write!(f, "{message}"),
+      | Error::Cancelled(message)
+      | Error::Unknown(message) => write!(f, "{message}"),
     }
   }
 }

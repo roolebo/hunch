@@ -1,7 +1,7 @@
 # hunch-seat
 
 Serves the seat of a host to hunch: the window managers it types into,
-the compute that runs speech models, and dictation, each a role.
+local:, the speech models this host runs, and dictation.
 
     hunch-seat serve
     hunch-seat ROLE [ADDR] COMMAND [ARGUMENTS]
@@ -21,7 +21,8 @@ runs.
 
 Commands of the service itself:
 
-    hunch-seat roles    the roles this build serves, as a JSON array
+    hunch-seat roles    the roles this build serves, as a JSON array,
+                        e.g. ["wm"] on a host that runs no models
     hunch-seat wms      the ADDR of each wm not inside another one, as a
                         JSON array
     hunch-seat needs [--ask] [--all]
@@ -32,6 +33,23 @@ Commands of the service itself:
                         --all lists every grant, each with `granted`
 
 The service never grants itself anything: the human does.
+
+## Models
+
+The service serves local:, as
+[INFERENCE.md](../skills/hunch/INFERENCE.md) says, at
+`ROOT/sock/inference.sock`, for hunch-host to mount: speech models
+through transcribe.cpp, the GGUF files whose metadata has `stt.` keys.
+It keeps the model it loaded between requests.
+
+It finds them in the Hugging Face cache, `$HF_HOME/hub`, by default
+`~/.cache/huggingface/hub`, so a model is never downloaded twice,
+whichever tool fetched it. `~/.config/hunch/models` lists more model
+directories, one per line, e.g. LM Studio's; a model there is a `.gguf`
+file. A MODEL is a Hugging Face repo, e.g.
+handy-computer/parakeet-tdt-0.6b-v3-gguf, with :QUANT where a repo has
+several quantizations, as llama.cpp names them, e.g. Q8_0; or a path
+inside a model directory.
 
 ## GNOME
 
@@ -57,10 +75,16 @@ and answers on that command's stdin and stdout, a JSON message per line:
         > ~/.config/systemd/user/hunch-seat.service
     systemctl --user enable --now hunch-seat
 
+Each role is a Cargo feature, all on by default; a host that runs no
+models leaves inference out:
+
+    cargo install --path . --no-default-features --features wm
+
 To try it by hand:
 
     hunch-seat serve &
     hunch-seat wm "tmux:$(tmux display -p '#{socket_path}')" windows
+    hunch-9p read inference/models
 
 To test it, with tmux and jq installed:
 

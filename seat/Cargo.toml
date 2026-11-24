@@ -6,13 +6,24 @@ description = "Serves a host's seat to hunch: dictation, its wms and compute"
 license = "MIT"
 
 [features]
-default = ["wm"]
+default = ["wm", "inference"]
 wm = []
+inference = ["dep:transcribe-cpp"]
 
 [dependencies]
-# The tree, its 9P2000.L, and the peers that mount on it
+# The tree and its 9P2000.L, which local: is served with, and the peers
+# that mount on the seat
 hunch = { package = "hunch-host", path = "../host" }
 serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Metal on macOS; elsewhere the CPU until a host asks for more
+transcribe-cpp = { version = "0.4.2", optional = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies.transcribe-cpp]
+version = "0.4.2"
+optional = true
+default-features = false

@@ -1,11 +1,16 @@
-//! hunch-seat serves the seat of a host, with the window managers and the
-//! compute dictation uses; README.md says how.
+//! hunch-seat serves the seat of a host, with the window managers
+//! dictation types into and the speech models this host runs; README.md
+//! says how.
 
 mod error;
+#[cfg(feature = "inference")]
+mod inference;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
 #[cfg(unix)]
 mod service;
+#[cfg(feature = "inference")]
+mod wav;
 #[cfg(feature = "wm")]
 mod wm;
 
@@ -28,7 +33,8 @@ wms prints the window managers not inside another one.
 needs prints what the human has yet to grant the service; --ask has the
 OS ask the human for it, where the OS can; --all lists every grant, each
 with whether it's granted.
-serve runs the service, which every other command asks.";
+serve runs the service, which every other command asks; it serves local:,
+the speech models this host runs, as INFERENCE.md in hunch says.";
 
 fn run(args: &[String]) -> Result<()> {
   match args {
@@ -78,13 +84,19 @@ fn here(args: &[String]) -> Option<service::Here> {
 
 /// What the service starts before it takes clients
 #[cfg(unix)]
-fn start() {}
+fn start() {
+  #[cfg(feature = "inference")]
+  inference::serve();
+}
 
 fn roles() -> Vec<&'static str> {
-  [cfg!(feature = "wm").then_some("wm")]
-    .into_iter()
-    .flatten()
-    .collect()
+  [
+    cfg!(feature = "wm").then_some("wm"),
+    cfg!(feature = "inference").then_some("inference"),
+  ]
+  .into_iter()
+  .flatten()
+  .collect()
 }
 
 fn wms() -> Vec<&'static str> {

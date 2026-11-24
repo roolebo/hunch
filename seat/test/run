@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #
-# test/run: end-to-end tests of hunch-seat, through its service.
+# test/run: end-to-end tests of hunch-seat, through its service, with
+# hunch-host mounting local:, the models it serves.
 #
 # Each test gets its own HOME, XDG directories, service and tmux servers,
 # all under a temporary directory: the human's own service and settings
 # stay untouched. A test that needs a client attached to tmux runs it in
 # a second tmux server, as a terminal.
+#
+# HUNCH_TEST_MODEL, a speech model in the human's Hugging Face cache, adds
+# the tests that load and run it; they make speech with macOS's say.
 #
 
 set -e
@@ -13,6 +17,9 @@ set -e
 CURDIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 ROOT=$(dirname "$CURDIR")
 HOST=$ROOT/target/debug/hunch-seat
+HUNCH_HOST=$(dirname "$ROOT")/host/target/debug
+# The tests make their own; a model test reads the human's
+REAL_HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}
 # Short, since a unix socket's path has room for about 100 bytes
 DIR=$(mktemp -d /tmp/hunch-seat-test.XXXXXX)
 FAILED=0
@@ -63,7 +70,10 @@ serve() {
 }
 
 teardown() {
+  local pid
   stop
+  pid=$(cat "$XDG_RUNTIME_DIR/hunch/hunch-host.pid" 2> /dev/null) &&
+    kill "$pid" 2> /dev/null
   t kill-server 2> /dev/null || true
   terminal kill-server 2> /dev/null || true
 }
@@ -359,6 +369,147 @@ test_needs() {
   check_has err "$ERR" "unknown flag: --now"
 }
 
+# A GGUF file with no tensors and the string KEY=VALUE metadata given
+gguf() {
+  local file=$1
+  local pair
+  shift
+  mkdir -p "$(dirname "$file")"
+  {
+    printf 'GGUF'
+    le 4 3
+    le 8 0
+    le 8 $#
+    for pair in "$@"; do
+      string "${pair%%=*}"
+      le 4 8
+      string "${pair#*=}"
+    done
+  } > "$file"
+}
+
+# NUMBER in SIZE bytes, little-endian
+le() {
+  local i
+  for i in $(seq 0 $(($1 - 1))); do
+    printf "\\$(printf '%03o' $((($2 >> (8 * i)) & 255)))"
+  done
+}
+
+string() {
+  le 8 ${#1}
+  printf '%s' "$1"
+}
+
+# A WAV as local: takes it: 16-bit PCM, 16 kHz, mono; a second of silence
+wav() {
+  local samples=16000
+  printf 'RIFF'
+  le 4 $((36 + 2 * samples))
+  printf 'WAVEfmt '
+  le 4 16
+  le 2 1
+  le 2 1
+  le 4 16000
+  le 4 32000
+  le 2 2
+  le 2 16
+  printf 'data'
+  le 4 $((2 * samples))
+  head -c $((2 * samples)) /dev/zero
+}
+
+# A repo of the Hugging Face cache: REPO, then its files under
+# snapshots/, each with the metadata after it, up to the next file
+hub() {
+  local repo=$HF_HOME/hub/models--${1/\//--}
+  shift
+  mkdir -p "$repo/snapshots" "$repo/refs"
+  while [ $# -gt 0 ]; do
+    local file=$1
+    local metadata=()
+    shift
+    while [ $# -gt 0 ] && [[ $1 == *=* ]]; do
+      metadata+=("$1")
+      shift
+    done
+    gguf "$repo/snapshots/$file" "${metadata[@]}"
+  done
+}
+
+# Reads PATH of the host's workspace; sets OUT, ERR and STATUS
+tree() {
+  STATUS=0
+  hunch-9p "$@" < "$IN" > "$TEST_DIR/out" 2> "$TEST_DIR/err" || STATUS=$?
+  OUT=$(< "$TEST_DIR/out")
+  ERR=$(< "$TEST_DIR/err")
+}
+
+# A request to transcribe with MODEL, TYPE, then stdin, into IN
+request() {
+  local speech
+  speech=$(mktemp "$TEST_DIR/speech.XXXXXX")
+  cat > "$speech"
+  {
+    printf '{"model": "%s", "type": "%s"}\n' "$1" "$2"
+    cat "$speech"
+  } \
+    > "$IN"
+}
+
+test_inference_models() {
+  hub org/speech main/speech-Q8_0.gguf stt.encoder=x general.name=Speech
+  echo main > "$HF_HOME/hub/models--org--speech/refs/main"
+  hub org/speech old/speech-old.gguf stt.encoder=x
+  # Pinned, as Handy fetches them: no refs/main
+  hub org/two rev/two-Q4_K.gguf stt.encoder=x rev/two-Q8_0.gguf stt.encoder=x
+  hub org/chat rev/chat-Q4_K.gguf general.name=Chat
+  gguf "$TEST_DIR/mine/pub/model/mine.gguf" stt.encoder=x
+  echo "$TEST_DIR/mine" > "$XDG_CONFIG_HOME/hunch/models"
+  tree read inference/models
+  check status "$STATUS" 0
+  check ids "$(jq -r '.[].id' <<< "$OUT" | paste -sd' ' -)" \
+    "org/speech org/two:Q4_K org/two:Q8_0 pub/model/mine.gguf"
+  local speech='{"id":"org/speech","inputs":["audio/wav"],"loaded":false,'
+  speech+='"name":"Speech","outputs":["text/plain"]}'
+  check speech "$(jq -cS '.[0] | del(.size)' <<< "$OUT")" "$speech"
+  local gguf=$HF_HOME/hub/models--org--speech/snapshots/main/speech-Q8_0.gguf
+  check size "$(jq '.[0].size' <<< "$OUT")" "$(wc -c < "$gguf" | tr -d ' ')"
+}
+
+test_inference_errors() {
+  hub org/speech rev/speech.gguf stt.encoder=x
+  wav | request org/none audio/wav
+  tree rdwr inference/transcribe
+  check unknown "$STATUS" 1
+  check_has err "$ERR" "no model org/none"
+  wav | request org/speech text/plain
+  tree rdwr inference/transcribe
+  check_has err "$ERR" "doesn't take text/plain"
+  wav | request org/speech audio/wav
+  tree rdwr inference/transcribe
+  check_has err "$ERR" "can't load org/speech"
+  echo hello | request org/speech audio/wav
+  tree rdwr inference/transcribe
+  check_has err "$ERR" "isn't a WAV file"
+  printf hello > "$IN"
+  tree rdwr inference/transcribe
+  check_has err "$ERR" "a line of JSON first"
+}
+
+test_inference_transcribes() {
+  [ -n "$HUNCH_TEST_MODEL" ] && macos || return 0
+  ln -s "$REAL_HF_HOME/hub" "$HF_HOME/hub"
+  say -o "$TEST_DIR/hello.wav" --data-format=LEI16@16000 "Hello world"
+  request "$HUNCH_TEST_MODEL" audio/wav < "$TEST_DIR/hello.wav"
+  tree rdwr inference/transcribe
+  check status "$STATUS" 0
+  check_has text "$(tr '[:upper:]' '[:lower:]' <<< "$OUT")" hello
+  tree read inference/models
+  check loaded "$(jq --arg id "$HUNCH_TEST_MODEL" \
+    '.[] | select(.id == $id) | .loaded' <<< "$OUT")" true
+}
+
 run() {
   local failed=$FAILED
   N=$((N + 1))
@@ -367,7 +518,7 @@ run() {
   IN=$TEST_DIR/in
   TMUX_SOCKET=$TEST_DIR/tmux
   mkdir -p "$TEST_DIR/home" "$TEST_DIR/run" "$TEST_DIR/config/hunch" \
-    "$TEST_DIR/state"
+    "$TEST_DIR/state" "$TEST_DIR/hf"
   : > "$IN"
   (
     export PATH=$DIR/bin:$PATH
@@ -375,6 +526,7 @@ run() {
     export XDG_RUNTIME_DIR=$TEST_DIR/run
     export XDG_CONFIG_HOME=$TEST_DIR/config
     export XDG_STATE_HOME=$TEST_DIR/state
+    export HF_HOME=$TEST_DIR/hf
     trap teardown EXIT
     serve
     "$1"
@@ -394,10 +546,12 @@ fi
 command -v jq > /dev/null || die "jq is not installed"
 command -v tmux > /dev/null || die "tmux is not installed"
 trap cleanup EXIT
-unset HUNCH_SEAT_SERVED TMUX
+unset HUNCH_SEAT_SERVED TMUX TMUX_PANE
 (cd "$ROOT" && cargo build -q) || die "Can't build hunch-seat"
+(cd "$ROOT/../host" && cargo build -q) || die "Can't build hunch-host"
 mkdir "$DIR/bin"
 ln -s "$HOST" "$DIR/bin/hunch-seat"
+ln -s "$HUNCH_HOST/hunch-9p" "$HUNCH_HOST/hunch-host" "$DIR/bin"
 
 TESTS=("$@")
 [ $# -gt 0 ] || TESTS=($(declare -F | cut -d' ' -f3 | grep '^test_'))
