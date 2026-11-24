@@ -7,15 +7,8 @@
   it, and an agent on another host would map `root` to its own checkout.
   Likely in 0.2, together with network addresses.
 
-- Participants outside the caller's window. find looks only in the
-  caller's tmux window, so an editor or agent in another window or session
-  is not found. Taking the nearest one elsewhere paired an agent with a Vim
-  left in a detached session. Pairing across windows needs its own design,
-  e.g. a group property that pairs participants explicitly, which would
-  also cover two agents in one window.
-
-- Version check. An editor would register `protocol` with the hunch version
-  it implements, and hunch-editor would refuse a different minor version. Worth
+- Version check. A device would give the hunch version it implements when
+  it serves, and hunch-host would refuse a different minor version. Worth
   it once there's more than one editor.
 
 - Dictation to the agent from a modeless editor. tmux-hunch sends a paste to
@@ -23,18 +16,18 @@
   insert, so their pastes always stay in the editor. They need another
   signal.
 
-- Only git is supported: hunch-editor finds REPO and vim-hunch shows RANGE
+- Only git is supported: review takes REPO and vim-hunch shows RANGE
   with git, and guard knows the agent's separate working copy only as a git
   linked worktree. Other version control, e.g. Perforce, needs its own way
   in each. memex's code role could answer it for every one: `code workspace
   PATH`.
 
-- The shell as a participant. zsh registers as `shell` and reports its
+- The shell as a device. zsh serves itself as `seat/shell` and reports its
   mode from zle-keymap-select, so with vi-mode a paste in normal mode goes
   to the agent, as from an editor. A shell protocol: `context` (directory,
   mode, command line) and `insert TEXT` (put a command on the line without
   running it).
 
-- Agent replies by voice. The voice is an output participant: the agent
-  sends it a short version of each reply and it speaks, e.g. `say` on the
+- Agent replies by voice. The voice is an output device: the agent
+  writes it a short version of each reply and it speaks, e.g. `say` on the
   Mac the human sits at, while the agent runs elsewhere over SSH.
