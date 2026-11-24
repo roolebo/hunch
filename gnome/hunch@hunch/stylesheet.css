@@ -1,0 +1,18 @@
+/* While the microphone records, so the human sees it does */
+.hunch-recording {
+  color: #e01b24;
+}
+
+/* While the microphone opens, the model loads or the speech becomes text */
+.hunch-busy {
+  color: #f6d32d;
+}
+
+/* What the seat is doing, at the bottom of the screen, as on a Mac */
+.hunch-pill {
+  background-color: rgba(30, 30, 30, 0.9);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: bold;
+}
