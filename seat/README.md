@@ -58,6 +58,12 @@ ENDPOINT it mounts, and types the text into the window in focus, or
 into the one the human redirected it to. It sends speech as the first of
 the model's inputs it writes: Ogg Opus, a tenth of WAV's size, or WAV.
 
+## Tray
+
+The seat writes the tray's menu, and a tray on each OS draws it, as
+[TRAY.md](TRAY.md) says: the Hunch app on a Mac, the Shell extension on
+GNOME.
+
 ## GNOME
 
 GNOME Shell lets only itself see and type into the windows of its

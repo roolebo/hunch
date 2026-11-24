@@ -616,6 +616,22 @@ EOF
   check context "$(jq -r .model <<< "$OUT")" parakeet
 }
 
+test_seat_menu() {
+  seat menu
+  check status "$STATUS" 0
+  check settings "$(jq -c '.[-1]' <<< "$OUT")" \
+    '{"settings":"","title":"Settings…"}'
+  check redirect \
+    "$(jq -r '.[] | select(.ctl == "redirect") | .title' <<< "$OUT")" \
+    "Redirect to Window…"
+  macos || return 0
+  seat target macos: 1
+  seat menu
+  check stop \
+    "$(jq -r '.[] | select(.ctl == "target focus") | .title' <<< "$OUT")" \
+    "Stop Redirect to macos: 1"
+}
+
 test_seat_watch() {
   macos || return 0
   "$HOST" seat watch > "$TEST_DIR/watch" &

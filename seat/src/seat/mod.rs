@@ -6,6 +6,7 @@
 mod audio;
 #[cfg(target_os = "linux")]
 mod linux;
+mod menu;
 
 use crate::error::{Error, Result, failed};
 #[cfg(feature = "inference")]
@@ -33,6 +34,7 @@ Commands:
   context               The seat's state, as JSON
   devices               The microphones, as JSON
   last                  The last transcription, kept in memory only
+  menu                  The tray's menu, as JSON
   needs                 Every grant the service uses, with whether it has
                         it, as needs --all prints them
   watch                 The state again each time it changes, a line each
@@ -546,6 +548,36 @@ fn encode(inputs: &Value, pcm: &[f32]) -> Result<(&'static str, Vec<u8>)> {
   )))
 }
 
+/// TARGET as the human knows the window: its app and title
+fn describe(target: &str) -> String {
+  let Some((WM, id)) = target.split_once(' ') else {
+    return target.to_string();
+  };
+  let windows = wm::open(WM).and_then(|wm| wm.windows()).unwrap_or_default();
+  match windows.into_iter().find(|w| w.id == *id) {
+    Some(w) if w.title.is_empty() => w.app,
+    Some(w) => format!("{} — {}", w.app, w.title),
+    None => target.to_string(),
+  }
+}
+
+fn view() -> menu::View {
+  let target = lock().settings.target.clone();
+  let needs: Vec<&str> = crate::grants(false)
+    .into_iter()
+    .filter(|g| !g.granted)
+    .map(|g| g.grant)
+    .collect();
+  menu::View {
+    status: if needs.is_empty() {
+      "Running".into()
+    } else {
+      format!("Needs {}", needs.join(", "))
+    },
+    redirect: (target != FOCUS).then(|| describe(&target)),
+  }
+}
+
 /// Frees the memory of this seat's model; a server frees its own
 fn eject() -> Result<()> {
   #[cfg(feature = "inference")]
@@ -596,6 +628,7 @@ pub fn run(
       .clone()
       .ok_or_else(|| failed("nothing dictated since the service started"))?,
     ["watch"] => return watch(out, gone),
+    ["menu"] => view().menu().to_string(),
     // For the tray, which reads the seat's files
     ["needs"] => crate::listed(false, true).to_string(),
     ["load"] => {
