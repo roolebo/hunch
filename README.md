@@ -179,8 +179,18 @@ reaches it in the activity's workspace:
 
     hunch-9p read seat/editor/context
 
-To talk to the agent from Vim, add a dictation app that pastes into the
-terminal, e.g. [Handy] on Linux, macOS and Windows, or [Pipit] on macOS.
+To talk to the agent from Vim, dictate through the seat, which types
+into the window in focus or into the one you redirect it to:
+
+- on a Mac, the Hunch app: `make -C macos`, then open
+  `macos/build/Hunch.app`; it has hunch-seat, hunch-host, hunch-9p and
+  hunch-browser-native inside
+- under GNOME, `cargo install --path seat` and the Shell extension:
+  copy `gnome/hunch@hunch` into `~/.local/share/gnome-shell/extensions`,
+  log in again and run `gnome-extensions enable hunch@hunch`
+
+Any dictation app that pastes into the terminal works too, e.g. [Handy]
+on Linux, macOS and Windows, or [Pipit] on macOS.
 
 ## Tree protocol
 
@@ -227,8 +237,10 @@ Install [firefox-hunch], then let Firefox run its bridge, once:
 
     hunch-browser-native --install
 
-Firefox starts the bridge with the extension; the agent of the activity
-the human is in reads the browser.
+On a Mac, run the one inside the Hunch app,
+`Hunch.app/Contents/MacOS/hunch-browser-native`. Firefox starts the
+bridge with the extension; the agent of the activity the human is in
+reads the browser.
 
 ## Agents
 
