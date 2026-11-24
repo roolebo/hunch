@@ -33,6 +33,11 @@ pub fn browser() -> PathBuf {
   root().join("sock").join("browser.sock")
 }
 
+/// Where hunch-seat serves local:, the inference this host runs
+pub fn inference() -> PathBuf {
+  root().join("sock").join("inference.sock")
+}
+
 pub fn log() -> PathBuf {
   root().join("hunch-host.log")
 }

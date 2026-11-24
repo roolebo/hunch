@@ -8,8 +8,19 @@ pub use server::{Connection, MAX_MSIZE};
 
 use crate::tree::Tree;
 use std::os::unix::net::UnixListener;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
+
+/// The program NAME from next to this one if it's there, as the hunch
+/// programs install together, else from PATH
+pub fn sibling(name: &str) -> PathBuf {
+  let beside = std::env::current_exe().map(|exe| exe.with_file_name(name));
+  match beside {
+    Ok(path) if path.exists() => path,
+    _ => name.into(),
+  }
+}
 
 /// Serves TREE to every client of LISTENER, each on its own thread
 pub fn serve(listener: UnixListener, tree: Arc<dyn Tree>, uid: u32) {

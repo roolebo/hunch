@@ -2,8 +2,7 @@ use hunch::device;
 use hunch::host::{root, serve};
 use hunch::registry::Tmux;
 use hunch::srv::Srv;
-use hunch::tree::Workspace;
-use hunch::tree::{Current, Remote};
+use hunch::tree::{ByActivity, Current, Remote, Workspace};
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixListener;
@@ -14,7 +13,7 @@ use std::thread;
 const USAGE: &str = "\
 Usage: hunch-host
 
-Serves the workspaces of the activities on this host over 9P2000.L, at
+Serves the workspaces of this host and its activities over 9P2000.L, at
 ROOT/sock/hunch.sock; skills/hunch/TREE.md in hunch specifies them.
 hunch-9p starts it when it isn't running.";
 
@@ -44,24 +43,45 @@ fn run() -> std::io::Result<()> {
   });
 
   let tmux = Arc::new(Tmux);
+  // The host's, in every workspace; hunch-seat serves local:
+  let inference = || {
+    Remote::new(
+      root::inference(),
+      "no local: hunch-seat serves it where it runs models",
+    )
+  };
+  // hunch-browser-native serves it, while the browser runs
+  let browser = || {
+    Remote::new(
+      root::browser(),
+      "no browser: Firefox serves it while hunch's extension runs",
+    )
+  };
   // What's on the seat: the activity's editor, which serves itself, and
-  // the browser, which hunch-browser-native serves while the browser runs
-  let seat = Workspace::new(vec![
-    ("editor", Box::new(device::editor(srv, root::tmp()))),
+  // the browser
+  let host = Workspace::new(vec![
+    ("inference", Box::new(inference())),
     (
-      "browser",
-      Box::new(Current::new(
-        Remote::new(
-          root::browser(),
-          "no browser: Firefox serves it while hunch's extension runs",
-        ),
-        tmux,
-      )),
+      "seat",
+      Box::new(Workspace::new(vec![("browser", Box::new(browser()))])),
     ),
   ]);
-  let workspace = Workspace::new(vec![("seat", Box::new(seat))]);
+  let activity = Workspace::new(vec![
+    ("inference", Box::new(inference())),
+    (
+      "seat",
+      Box::new(Workspace::new(vec![
+        ("editor", Box::new(device::editor(srv, root::tmp()))),
+        ("browser", Box::new(Current::new(browser(), tmux))),
+      ])),
+    ),
+  ]);
   eprintln!("hunch-host: serving at {}", socket.display());
-  serve(listener, Arc::new(workspace), uid);
+  serve(
+    listener,
+    Arc::new(ByActivity::new(Box::new(host), Box::new(activity))),
+    uid,
+  );
   Ok(())
 }
 

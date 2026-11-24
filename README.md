@@ -194,6 +194,10 @@ Specified in [skills/hunch/PROTOCOL.md](skills/hunch/PROTOCOL.md).
 
 Specified in [skills/hunch/BROWSER.md](skills/hunch/BROWSER.md).
 
+## Inference protocol
+
+Specified in [skills/hunch/INFERENCE.md](skills/hunch/INFERENCE.md).
+
 ## Browser
 
 Install [firefox-hunch], then let Firefox run its bridge, once:

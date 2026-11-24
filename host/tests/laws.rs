@@ -5,7 +5,8 @@ mod common;
 mod conform;
 
 use hunch::tree::{
-  ANSWER, Current, Focus, Kind, Remote, Result, Tree, Workspace, no_such,
+  ANSWER, ByActivity, Current, Focus, Kind, Remote, Result, Tree, Workspace,
+  no_such,
 };
 use std::sync::{Arc, Mutex};
 
@@ -147,6 +148,20 @@ fn a_device_outside_the_current_task_is_no_device() {
     );
     assert_eq!(with.list("@1", &[]), without.list("@1", &[]));
   }
+}
+
+#[test]
+fn an_attach_without_a_task_is_the_hosts() {
+  let activities = ByActivity::new(
+    Box::new(Workspace::new(vec![("x", Box::new(Note::default()))])),
+    Box::new(Workspace::new(vec![])),
+  );
+  let host = Workspace::new(vec![("x", Box::new(Note::default()))]);
+  assert_eq!(observe(&activities, "", &["x"]), observe(&host, "", &["x"]));
+  assert_eq!(
+    observe(&activities, "@1", &["x"]),
+    observe(&Workspace::new(vec![]), "@1", &["x"])
+  );
 }
 
 /// Serves TREE at a socket of its own, as hunch-browser-native does

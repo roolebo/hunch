@@ -1,5 +1,5 @@
 use hunch::client::Client;
-use hunch::host::root;
+use hunch::host::{self, root};
 use hunch::p9::errno;
 use hunch::registry::UNSAVED;
 use std::fs::OpenOptions;
@@ -25,23 +25,19 @@ Commands:
                 Serve says
 
 Reaches ACTIVITY's workspace in hunch-host: in tmux, by default, the
-window's. Starts hunch-host if it isn't running. Exits with 3 when the
-file is busy, e.g. the human has unsaved changes in the editor.";
+window's; else the host's. Starts hunch-host if it isn't running. Exits
+with 3 when the file is busy, e.g. the human has unsaved changes in the
+editor.";
 
 /// START_TRIES × START_WAIT: how long a hunch-host this starts may take to
 /// listen
 const START_TRIES: u32 = 50;
 const START_WAIT: Duration = Duration::from_millis(100);
 
-/// Starts hunch-host, from next to this program if it's there, on its own
-/// so that it outlives the shell that started it
+/// Starts hunch-host on its own, so that it outlives the shell that
+/// started it
 fn start() -> io::Result<()> {
-  let beside = std::env::current_exe()?.with_file_name("hunch-host");
-  let program = if beside.exists() {
-    beside
-  } else {
-    "hunch-host".into()
-  };
+  let program = host::sibling("hunch-host");
   root::make()?;
   let log = OpenOptions::new()
     .create(true)
@@ -87,6 +83,17 @@ fn connect(socket: &Path) -> io::Result<UnixStream> {
   )))
 }
 
+/// The tmux window this runs in, as an activity
+fn window() -> Option<String> {
+  let pane = std::env::var("TMUX_PANE").ok()?;
+  let out = Command::new("tmux")
+    .args(["display", "-p", "-t", &pane, "#{window_id}"])
+    .output()
+    .ok()?;
+  let window = String::from_utf8(out.stdout).ok()?.trim().to_string();
+  (out.status.success() && !window.is_empty()).then_some(window)
+}
+
 /// Hands stdin and stdout to hunch-host as the device of KIND, until
 /// either end closes
 fn serve(activity: &str, kind: &str) -> io::Result<()> {
@@ -110,17 +117,6 @@ fn stdin() -> io::Result<Vec<u8>> {
   Ok(data)
 }
 
-/// The tmux window this runs in, as an activity
-fn window() -> Option<String> {
-  let pane = std::env::var("TMUX_PANE").ok()?;
-  let out = Command::new("tmux")
-    .args(["display", "-p", "-t", &pane, "#{window_id}"])
-    .output()
-    .ok()?;
-  let window = String::from_utf8(out.stdout).ok()?.trim().to_string();
-  (out.status.success() && !window.is_empty()).then_some(window)
-}
-
 fn main() -> ExitCode {
   let args: Vec<String> = std::env::args().skip(1).collect();
   let (activity, command, path) = match args.as_slice() {
@@ -131,13 +127,7 @@ fn main() -> ExitCode {
     [flag, activity, command, path] if flag == "--activity" => {
       (activity.clone(), command, path)
     }
-    [command, path] => match window() {
-      Some(window) => (window, command, path),
-      None => {
-        eprintln!("hunch-9p: no activity: run it in tmux, or give one");
-        return ExitCode::FAILURE;
-      }
-    },
+    [command, path] => (window().unwrap_or_default(), command, path),
     _ => {
       eprintln!("{USAGE}");
       return ExitCode::FAILURE;

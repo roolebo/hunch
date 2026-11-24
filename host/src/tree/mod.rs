@@ -136,6 +136,50 @@ impl Tree for Workspace {
   }
 }
 
+/// The workspaces of TREE.md's Access: the host's to an attach without a
+/// activity, an activity's to an attach with its id
+pub struct ByActivity {
+  host: Box<dyn Tree>,
+  activity: Box<dyn Tree>,
+}
+
+impl ByActivity {
+  pub fn new(host: Box<dyn Tree>, activity: Box<dyn Tree>) -> Self {
+    ByActivity { host, activity }
+  }
+
+  fn of(&self, activity: &str) -> &dyn Tree {
+    if activity.is_empty() {
+      self.host.as_ref()
+    } else {
+      self.activity.as_ref()
+    }
+  }
+}
+
+impl Tree for ByActivity {
+  fn kind(&self, activity: &str, path: &[&str]) -> Result<Kind> {
+    self.of(activity).kind(activity, path)
+  }
+
+  fn list(&self, activity: &str, path: &[&str]) -> Result<Vec<(String, Kind)>> {
+    self.of(activity).list(activity, path)
+  }
+
+  fn read(
+    &self,
+    activity: &str,
+    path: &[&str],
+    input: Option<&[u8]>,
+  ) -> Result<Vec<u8>> {
+    self.of(activity).read(activity, path, input)
+  }
+
+  fn write(&self, activity: &str, path: &[&str], data: &[u8]) -> Result<()> {
+    self.of(activity).write(activity, path, data)
+  }
+}
+
 mod current;
 mod remote;
 pub use current::{Current, Focus};

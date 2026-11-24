@@ -158,13 +158,8 @@ impl<'a> Connection<'a> {
         let fid = f.u32().map_err(malformed)?;
         let _afid = f.u32().map_err(malformed)?;
         let _uname = f.str().map_err(malformed)?;
+        // Empty for the host's workspace
         let activity = f.str().map_err(malformed)?;
-        if activity.is_empty() {
-          return Err(Error::new(
-            errno::EINVAL,
-            "attach with an ACTIVITY as aname",
-          ));
-        }
         self.activity = Some(activity);
         self.fids.insert(
           fid,
