@@ -183,6 +183,18 @@ unsafe extern "C" {
   fn CGEventGetIntegerValueField(event: CFTypeRef, field: u32) -> i64;
 }
 
+#[link(name = "AVFoundation", kind = "framework")]
+unsafe extern "C" {
+  static AVMediaTypeAudio: CFTypeRef;
+}
+
+#[link(name = "objc")]
+unsafe extern "C" {
+  fn objc_getClass(name: *const c_char) -> *const c_void;
+  fn sel_registerName(name: *const c_char) -> *const c_void;
+  fn objc_msgSend();
+}
+
 type TapCallback =
   extern "C" fn(*mut c_void, u32, CFTypeRef, *mut c_void) -> CFTypeRef;
 const SESSION_TAP: u32 = 1;
@@ -195,6 +207,8 @@ const KEY_DOWN: u32 = 10;
 const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
 const KEYCODE_FIELD: u32 = 9;
 const KEY_ESCAPE: i64 = 53;
+/// AVAuthorizationStatusAuthorized
+const AV_AUTHORIZED: isize = 3;
 
 /// A CoreFoundation object this code created, released when dropped
 struct Owned(CFTypeRef);
@@ -578,6 +592,20 @@ pub fn next_click() -> Result<Option<Point>, String> {
     CGEventTapEnable(tap.0, false);
   }
   Ok(pick.click)
+}
+
+/// Whether the human let this program record the microphone
+pub fn may_record_audio() -> bool {
+  // SAFETY: calls +[AVCaptureDevice authorizationStatusForMediaType:],
+  // which takes a media type and returns an NSInteger
+  unsafe {
+    let class = objc_getClass(c"AVCaptureDevice".as_ptr());
+    let selector =
+      sel_registerName(c"authorizationStatusForMediaType:".as_ptr());
+    let send: extern "C" fn(*const c_void, *const c_void, CFTypeRef) -> isize =
+      std::mem::transmute(objc_msgSend as *const ());
+    send(class, selector, AVMediaTypeAudio) == AV_AUTHORIZED
+  }
 }
 
 pub fn pointer() -> Option<Point> {

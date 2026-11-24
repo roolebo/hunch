@@ -7,6 +7,8 @@ mod error;
 mod inference;
 #[cfg(all(feature = "wm", target_os = "macos"))]
 mod macos;
+#[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
+mod seat;
 #[cfg(unix)]
 mod service;
 #[cfg(feature = "inference")]
@@ -26,6 +28,7 @@ Usage: hunch-seat ROLE [ADDR] COMMAND [ARGUMENTS]
 
 Roles:
   wm ADDR       a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
+  seat          where the human sits: dictation
 
 hunch-seat ROLE --help lists the commands of ROLE.
 roles prints the roles this hunch-seat is built with.
@@ -48,6 +51,22 @@ fn run(args: &[String]) -> Result<()> {
     [command, flags @ ..] if command == "needs" => needs(flags)?,
     #[cfg(unix)]
     [command] if command == "serve" => service::serve(here, start)?,
+    #[cfg(all(
+      feature = "seat",
+      any(target_os = "macos", target_os = "linux")
+    ))]
+    [role, flag] if role == "seat" && (flag == "-h" || flag == "--help") => {
+      println!("{}", seat::USAGE)
+    }
+    #[cfg(all(
+      feature = "seat",
+      any(target_os = "macos", target_os = "linux")
+    ))]
+    [role, ..] if role == "seat" => {
+      return Err(Error::Failed(
+        "the seat lives in the service: run it with hunch-seat serve".into(),
+      ));
+    }
     #[cfg(feature = "wm")]
     [role, rest @ ..] if role == "wm" => {
       wm::run(rest, &mut std::io::stdin(), &mut std::io::stdout())?
@@ -67,6 +86,13 @@ fn run(args: &[String]) -> Result<()> {
 #[cfg(unix)]
 fn here(args: &[String]) -> Option<service::Here> {
   match args.first().map(String::as_str) {
+    #[cfg(all(
+      feature = "seat",
+      any(target_os = "macos", target_os = "linux")
+    ))]
+    Some("seat") if args.get(1).is_none_or(|a| a != "-h" && a != "--help") => {
+      Some(seat::run)
+    }
     // In the service, which holds the Shell extension's connection
     #[cfg(all(feature = "wm", target_os = "linux"))]
     Some("wm") if args.get(1).is_some_and(|a| a == wm::gnome::ADDR) => {
@@ -93,6 +119,11 @@ fn roles() -> Vec<&'static str> {
   [
     cfg!(feature = "wm").then_some("wm"),
     cfg!(feature = "inference").then_some("inference"),
+    cfg!(all(
+      feature = "seat",
+      any(target_os = "macos", target_os = "linux")
+    ))
+    .then_some("seat"),
   ]
   .into_iter()
   .flatten()
@@ -150,6 +181,14 @@ fn grants(ask: bool) -> Vec<Grant> {
       what: "sending text, picking windows",
       grant: "Accessibility",
       granted: events,
+    });
+    // Only the app can ask for the microphone: the request answers
+    // through a callback, which the service has no run loop for
+    #[cfg(feature = "seat")]
+    grants.push(Grant {
+      what: "dictation",
+      grant: "Microphone",
+      granted: macos::may_record_audio(),
     });
   }
   grants
