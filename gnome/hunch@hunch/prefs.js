@@ -3,13 +3,14 @@
 // the human writes.
 
 import Adw from 'gi://Adw';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from
   'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {
-  readSeat, readTree, seatCtl, takePage,
+  mount, mounted, readSeat, readTree, seatCtl, takePage, writeTree,
 } from './hunch.js';
 
 // The dictation keys hunch-seat knows on Linux, as the human reads them
@@ -50,6 +51,8 @@ export default class HunchPreferences extends ExtensionPreferences {
     window.set_default_size(720, 480);
     window.add(this._page('dictation', 'Dictation',
       'audio-input-microphone-symbolic', this._dictation));
+    window.add(this._page('inference', 'Inference', 'network-server-symbolic',
+      this._inference));
     window.add(this._page('permissions', 'Permissions',
       'security-medium-symbolic', this._permissions));
     window.add(this._page('about', 'About', 'help-about-symbolic',
@@ -126,9 +129,68 @@ export default class HunchPreferences extends ExtensionPreferences {
     const model = combo('Model', ids, seat.model ?? '',
       id => id && this._ctl(`model ${id}`));
     if (transcribes.length === 0)
-      model.subtitle = 'No model of inference/ says it takes speech';
+      model.subtitle = 'No model of Inference says it takes speech';
     group.add(model);
     return group;
+  }
+
+  /// Where speech goes: This Computer, or a server by its URL, with the
+  /// key this computer logs in with, which hunch-host keeps in the Secret
+  /// Service; the key's field shows none
+  async _inference(page) {
+    const group = new Adw.PreferencesGroup({
+      title: 'Inference',
+      description: 'This computer runs its own models; a server is an ' +
+        'OpenAI-compatible one',
+    });
+    const now = mounted();
+    const local = now === 'local:';
+    const server = new Adw.EntryRow({
+      title: 'Server, e.g. http://thinkstation:8080/v1',
+      text: local ? '' : now, show_apply_button: true,
+      visible: !local,
+    });
+    const key = new Adw.PasswordEntryRow({
+      title: 'Key, if the server asks for one', show_apply_button: true,
+      visible: !local,
+    });
+    const where = combo('Transcribe on',
+      [['local:', 'This Computer'], ['server', 'A Server']],
+      local ? 'local:' : 'server', choice => {
+        server.visible = key.visible = choice === 'server';
+        if (choice === 'local:')
+          this._mount('local:');
+      });
+    server.connect('apply', () => {
+      const url = server.text.trim();
+      let uri = null;
+      try {
+        uri = GLib.Uri.parse(url, GLib.UriFlags.NONE);
+      } catch {
+        // Not a URL, as below
+      }
+      if (!['http', 'https'].includes(uri?.get_scheme()) || !uri.get_host())
+        return this._toast(`${url || 'Nothing'} isn't a server's URL`);
+      this._mount(url);
+    });
+    key.connect('apply', () => {
+      writeTree('inference/login', `${key.text}\n`)
+        .then(() => this._toast('Kept the key'))
+        .catch(e => this._toast(e.message));
+      key.text = '';
+    });
+    [where, server, key].forEach(row => group.add(row));
+    page.add(group);
+  }
+
+  /// Mounts ENDPOINT on inference/, then shows its models
+  _mount(endpoint) {
+    try {
+      mount(endpoint);
+    } catch (e) {
+      this._toast(e.message);
+    }
+    this._refreshSpeech?.().catch(e => this._toast(e.message));
   }
 
   async _permissions(page) {

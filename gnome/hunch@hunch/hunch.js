@@ -1,6 +1,6 @@
 // What the extension and its preferences share: the files of the host's
-// workspace. Only Gio and GLib, since the preferences run apart from the
-// Shell.
+// workspace, and its namespace. Only Gio and GLib, since the preferences
+// run apart from the Shell.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -57,6 +57,46 @@ function run(argv, input = null) {
       }
     });
   });
+}
+
+/// The namespace, which only the human writes, here through the
+/// preferences; it mounts the ENDPOINT inference/ is, as INFERENCE.md in
+/// hunch says
+function namespacePath() {
+  return GLib.build_filenamev(
+    [GLib.get_user_config_dir(), 'hunch', 'namespace']);
+}
+
+function namespaceLines() {
+  const path = namespacePath();
+  if (!GLib.file_test(path, GLib.FileTest.EXISTS))
+    return [];
+  const [, bytes] = GLib.file_get_contents(path);
+  return new TextDecoder().decode(bytes).split('\n');
+}
+
+/// The ENDPOINT of LINE, if it mounts one on inference/
+function mountOf(line) {
+  const words = line.trim().split(/\s+/);
+  return words.length === 3 && words[0] === 'mount' &&
+    words[2] === '/inference' ? words[1] : null;
+}
+
+/// The ENDPOINT mounted: the last mount, else local:
+export function mounted() {
+  return namespaceLines().map(mountOf).filter(Boolean).pop() ?? 'local:';
+}
+
+/// Mounts ENDPOINT, in place of the mounts before, keeping the rest
+export function mount(endpoint) {
+  const lines = namespaceLines().filter(l => !mountOf(l));
+  while (lines.length > 0 && lines[lines.length - 1] === '')
+    lines.pop();
+  if (endpoint !== 'local:')
+    lines.push(`mount ${endpoint} /inference`);
+  const path = namespacePath();
+  GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o700);
+  GLib.file_set_contents(path, `${lines.join('\n')}\n`);
 }
 
 /// Where the extension leaves the preferences' page to open, since GNOME
