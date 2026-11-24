@@ -255,6 +255,27 @@ impl Wm for Macos {
     deliver(&window, macos::post_return)
   }
 
+  /// screencapture in this process, so the image comes under the grant
+  /// the human gave the seat
+  fn screen(&self, window: &str) -> Result<Vec<u8>> {
+    find(window)?;
+    let path = std::env::temp_dir().join(format!("hunch-screen-{window}.png"));
+    let status = std::process::Command::new("/usr/sbin/screencapture")
+      .args(["-x", "-o", "-t", "png", "-l", window])
+      .arg(&path)
+      .status()
+      .map_err(|e| failed(format!("can't run screencapture: {e}")))?;
+    let png = std::fs::read(&path);
+    let _ = std::fs::remove_file(&path);
+    match png {
+      Ok(png) if status.success() => Ok(png),
+      _ => Err(failed(format!(
+        "screencapture took no image of {window}: grant the seat Screen \
+         Recording"
+      ))),
+    }
+  }
+
   fn pick(&self) -> Result<String> {
     eprintln!("click the window to pick, or press Escape");
     let click = macos::next_click()

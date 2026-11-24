@@ -57,6 +57,7 @@ Commands:
                         put WINDOW there, or as near as the wm can
     state WINDOW STATE  show WINDOW in STATE
     pick                let the human pick a window, print its id
+    screen WINDOW       print what WINDOW shows, as PNG
 
 Without CLIENT, a multiplexer takes the client the human typed into
 last.
@@ -109,6 +110,8 @@ Rules:
 - A tiling wm places a window as near as its layout allows; windows shows
   where it went.
 - Only pick asks the human anything.
+- screen shows what the human sees, so it needs the grant they give the
+  seat to see windows, e.g. Screen Recording on macOS.
 - GNOME lets no program type into a window but the one in focus, so
   there send and submit give WINDOW the focus while they type, then
   give it back: the one exception to the first rule.

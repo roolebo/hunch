@@ -26,6 +26,7 @@ Commands:
   state WINDOW STATE             Show WINDOW normal, maximized, fullscreen or
                                  minimized
   pick                           Let the human pick a window, print its id
+  screen WINDOW                  Print what WINDOW shows, as PNG
 
 TTY picks a multiplexer's client; it defaults to the one used last.";
 
@@ -215,6 +216,9 @@ pub trait Wm {
   fn pick(&self) -> Result<String> {
     Err(self.not_yet("pick"))
   }
+  fn screen(&self, _window: &str) -> Result<Vec<u8>> {
+    Err(self.not_yet("screen"))
+  }
 
   fn not_yet(&self, command: &str) -> Error {
     failed(format!(
@@ -303,6 +307,11 @@ pub fn run(
     _ => return Err(Error::Usage("missing ADDR or COMMAND".into(), USAGE)),
   };
   let wm = open(addr)?;
+  if let ("screen", [window]) = (command, rest) {
+    return out
+      .write_all(&wm.screen(window)?)
+      .map_err(|e| failed(format!("can't answer: {e}")));
+  }
   let said = match (command, rest) {
     ("context", []) => wm.context(None)?.to_json().to_string(),
     ("context", ["--client", tty]) => {
