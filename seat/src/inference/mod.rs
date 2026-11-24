@@ -215,6 +215,17 @@ fn ensure_loaded(loaded: &mut Option<Loaded>, id: &str) -> Result<()> {
   Ok(())
 }
 
+/// Loads the model ahead, so the first run doesn't wait for it
+pub fn load(id: &str) -> Result<()> {
+  ensure_loaded(&mut LOADED.lock().unwrap_or_else(|e| e.into_inner()), id)
+}
+
+/// Frees the model; ggml's Metal backend aborts at exit while one is loaded
+pub fn unload() {
+  LOADED.lock().unwrap_or_else(|e| e.into_inner()).take();
+  LOADED_ID.lock().unwrap_or_else(|e| e.into_inner()).take();
+}
+
 /// The text of pcm, 16 kHz mono samples in [-1, 1], by the model id
 pub fn transcribe(id: &str, pcm: &[f32]) -> Result<String> {
   let mut loaded = LOADED.lock().unwrap_or_else(|e| e.into_inner());

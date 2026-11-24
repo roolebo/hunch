@@ -74,6 +74,8 @@ teardown() {
   stop
   pid=$(cat "$XDG_RUNTIME_DIR/hunch/hunch-host.pid" 2> /dev/null) &&
     kill "$pid" 2> /dev/null
+  [ -n "$SERVER" ] && kill "$SERVER" 2> /dev/null
+  SERVER=
   t kill-server 2> /dev/null || true
   terminal kill-server 2> /dev/null || true
 }
@@ -362,7 +364,7 @@ test_needs() {
       "Screen Recording,Accessibility,Microphone"
     check fields "$(jq -c '.[0] | keys' <<< "$OUT")" '["for","grant","granted"]'
   else
-    check grants "$OUT" "[]"
+    check grants "$(jq -r '.[].grant' <<< "$OUT" | paste -sd, -)" "group input"
   fi
   call needs --now
   check status "$STATUS" 1
@@ -514,6 +516,56 @@ seat() {
   call seat "$@"
 }
 
+test_seat_context() {
+  macos || return 0
+  seat context
+  check status "$STATUS" 0
+  local fields="error idle key loading locked model opening"
+  fields+=" preload recording submit transcribing warm wm"
+  check fields "$(jq -r 'keys | join(" ")' <<< "$OUT")" "$fields"
+  local defaults='{"key":"right-super","model":null,'
+  defaults+='"submit":true,"preload":true,"warm":null}'
+  check defaults "$(jq -c '{key, model, submit, preload, warm}' \
+    <<< "$OUT")" "$defaults"
+}
+
+test_seat_settings_stay() {
+  macos || return 0
+  hub org/speech rev/speech.gguf stt.encoder=x
+  seat key right-alt
+  check status "$STATUS" 0
+  seat submit off
+  seat preload off
+  seat warm 10
+  seat model org/speech
+  check status "$STATUS" 0
+  stop
+  serve
+  seat context
+  local settings='{"key":"right-alt","model":"org/speech",'
+  settings+='"submit":false,"preload":false,"warm":10}'
+  check settings "$(jq -c '{key, model, submit, preload, warm}' \
+    <<< "$OUT")" "$settings"
+}
+
+test_seat_errors() {
+  macos || return 0
+  seat key caps-lock
+  check status "$STATUS" 1
+  check_has err "$ERR" "KEY is one of right-super"
+  seat model org/none
+  check status "$STATUS" 4
+  seat warm 0
+  check status "$STATUS" 1
+  check_has err "$ERR" "MINUTES is a whole number above 0"
+  seat submit maybe
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown command"
+  seat last
+  check status "$STATUS" 1
+  check_has err "$ERR" "nothing dictated"
+}
+
 test_seat_devices() {
   seat devices
   check status "$STATUS" 0
@@ -523,6 +575,51 @@ test_seat_devices() {
   check fields "$(jq -c '.[0] | keys' <<< "$OUT")" \
     '["id","in_use","kind","name","signal"]'
   check one "$(jq '[.[] | select(.in_use)] | length' <<< "$OUT")" 1
+}
+
+# Serves the files under DIR over HTTP; sets URL to the server's /v1
+http_server() {
+  python3 -u -m http.server --bind 127.0.0.1 --directory "$1" 0 \
+    > "$TEST_DIR/http.log" 2>&1 &
+  SERVER=$!
+  wait_for grep -q "port" "$TEST_DIR/http.log" ||
+    die "The HTTP server didn't start: $(< "$TEST_DIR/http.log")"
+  URL=http://127.0.0.1:$(sed -n 's/.* port \([0-9]*\).*/\1/p' \
+    "$TEST_DIR/http.log")/v1
+}
+
+test_seat_model_of_a_server() {
+  macos || return 0
+  mkdir -p "$TEST_DIR/www/v1"
+  cat > "$TEST_DIR/www/v1/models" << 'EOF'
+{
+  "data": [
+    {"id": "parakeet", "task": "automatic-speech-recognition"},
+    {"id": "qwen", "display_name": "Qwen"}
+  ]
+}
+EOF
+  http_server "$TEST_DIR/www"
+  echo "mount $URL /inference" > "$XDG_CONFIG_HOME/hunch/namespace"
+  seat model qwen
+  check_has qwen "$ERR" "qwen doesn't turn speech into text"
+  seat model none
+  check unknown "$STATUS" 4
+  check_has err "$ERR" "inference has no model none"
+  seat model parakeet
+  check model "$STATUS" 0
+  seat context
+  check context "$(jq -r .model <<< "$OUT")" parakeet
+}
+
+test_seat_watch() {
+  macos || return 0
+  "$HOST" seat watch > "$TEST_DIR/watch" &
+  wait_for [ -s "$TEST_DIR/watch" ] || true
+  seat submit off
+  wait_for [ "$(wc -l < "$TEST_DIR/watch")" -ge 2 ] || true
+  kill $!
+  check lines "$(jq -c .submit "$TEST_DIR/watch" | paste -sd' ' -)" "true false"
 }
 
 run() {
@@ -567,6 +664,41 @@ unset HUNCH_SEAT_SERVED TMUX TMUX_PANE
 mkdir "$DIR/bin"
 ln -s "$HOST" "$DIR/bin/hunch-seat"
 ln -s "$HUNCH_HOST/hunch-9p" "$HUNCH_HOST/hunch-host" "$DIR/bin"
+# The OS's stores of secrets, as far as hunch-host uses them: keys in
+# $HOME/keys, a file each, and every command line in $HOME/keys/argv
+cat > "$DIR/bin/security" << 'EOF'
+#!/usr/bin/env bash
+mkdir -p "$HOME/keys"
+echo "$*" >> "$HOME/keys/argv"
+if [ "$1" == -i ]; then
+  read -r line
+  eval "set -- $line"
+fi
+while [ $# -gt 0 ]; do
+  case $1 in
+    -a) host=$2 ;;
+    -w) [ $# -gt 1 ] && key=$2 ;;
+  esac
+  shift
+done
+if [ -n "$key" ]; then
+  printf '%s' "$key" > "$HOME/keys/$host"
+else
+  cat "$HOME/keys/$host" 2> /dev/null || exit 44
+fi
+EOF
+cat > "$DIR/bin/secret-tool" << 'EOF'
+#!/usr/bin/env bash
+mkdir -p "$HOME/keys"
+echo "$*" >> "$HOME/keys/argv"
+host=${!#}
+if [ "$1" == store ]; then
+  cat > "$HOME/keys/$host"
+else
+  cat "$HOME/keys/$host" 2> /dev/null || exit 1
+fi
+EOF
+chmod +x "$DIR/bin/security" "$DIR/bin/secret-tool"
 
 TESTS=("$@")
 [ $# -gt 0 ] || TESTS=($(declare -F | cut -d' ' -f3 | grep '^test_'))

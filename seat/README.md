@@ -51,6 +51,11 @@ handy-computer/parakeet-tdt-0.6b-v3-gguf, with :QUANT where a repo has
 several quantizations, as llama.cpp names them, e.g. Q8_0; or a path
 inside a model directory.
 
+## Dictation
+
+The seat transcribes through the workspace's `inference/`, whichever
+ENDPOINT it mounts, as WAV, and types the text into the window in focus.
+
 ## GNOME
 
 GNOME Shell lets only itself see and type into the windows of its
@@ -75,16 +80,18 @@ and answers on that command's stdin and stdout, a JSON message per line:
         > ~/.config/systemd/user/hunch-seat.service
     systemctl --user enable --now hunch-seat
 
-Each role is a Cargo feature, all on by default; a host that runs no
-models leaves inference out:
+On Linux the dictation key comes from evdev: the human joins the group
+input. Each role is a Cargo feature, all on by default; a seat that
+runs no models, as a thin laptop, leaves inference out:
 
-    cargo install --path . --no-default-features --features wm
+    cargo install --path . --no-default-features --features seat
 
 To try it by hand:
 
     hunch-seat serve &
     hunch-seat wm "tmux:$(tmux display -p '#{socket_path}')" windows
     hunch-9p read inference/models
+    hunch-seat seat context
 
 To test it, with tmux and jq installed:
 

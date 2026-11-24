@@ -11,7 +11,7 @@ mod macos;
 mod seat;
 #[cfg(unix)]
 mod service;
-#[cfg(feature = "inference")]
+#[cfg(any(feature = "inference", feature = "seat"))]
 mod wav;
 #[cfg(feature = "wm")]
 mod wm;
@@ -113,6 +113,8 @@ fn here(args: &[String]) -> Option<service::Here> {
 fn start() {
   #[cfg(feature = "inference")]
   inference::serve();
+  #[cfg(all(feature = "seat", any(target_os = "macos", target_os = "linux")))]
+  seat::start();
 }
 
 fn roles() -> Vec<&'static str> {
@@ -177,8 +179,14 @@ fn grants(ask: bool) -> Vec<Grant> {
     if ask && !events {
       macos::ask_to_post_events();
     }
+    // Accessibility lets the dictation key's tap listen too, so the
+    // human never needs to grant Input Monitoring
     grants.push(Grant {
-      what: "sending text, picking windows",
+      what: if cfg!(feature = "seat") {
+        "sending text, picking windows, the dictation key"
+      } else {
+        "sending text, picking windows"
+      },
       grant: "Accessibility",
       granted: events,
     });
@@ -191,6 +199,13 @@ fn grants(ask: bool) -> Vec<Grant> {
       granted: macos::may_record_audio(),
     });
   }
+  // The keys come from evdev, under any desktop
+  #[cfg(all(feature = "seat", target_os = "linux"))]
+  grants.push(Grant {
+    what: "the dictation key",
+    grant: "group input",
+    granted: seat::may_listen_to_keys(),
+  });
   grants
 }
 

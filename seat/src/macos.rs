@@ -160,6 +160,7 @@ unsafe extern "C" {
   fn CGPreflightPostEventAccess() -> bool;
   fn CGRequestScreenCaptureAccess() -> bool;
   fn CGRequestPostEventAccess() -> bool;
+  fn CGPreflightListenEventAccess() -> bool;
   fn CGEventCreateKeyboardEvent(
     source: CFTypeRef,
     key: u16,
@@ -181,6 +182,9 @@ unsafe extern "C" {
   ) -> CFTypeRef;
   fn CGEventTapEnable(tap: CFTypeRef, enable: bool);
   fn CGEventGetIntegerValueField(event: CFTypeRef, field: u32) -> i64;
+  fn CGEventGetFlags(event: CFTypeRef) -> u64;
+  fn CGEventSourceSecondsSinceLastEventType(state: u32, kind: u32) -> f64;
+  fn CGSessionCopyCurrentDictionary() -> CFTypeRef;
 }
 
 #[link(name = "AVFoundation", kind = "framework")]
@@ -201,12 +205,19 @@ const SESSION_TAP: u32 = 1;
 const HEAD_INSERT: u32 = 0;
 /// A tap that may swallow events, not only listen
 const TAP_ACTIVE: u32 = 0;
+/// A tap that only listens, so it can never hold up the human's input
+const TAP_LISTEN: u32 = 1;
 const LEFT_MOUSE_DOWN: u32 = 1;
 const LEFT_MOUSE_UP: u32 = 2;
 const KEY_DOWN: u32 = 10;
 const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
 const KEYCODE_FIELD: u32 = 9;
+/// The pid of the process that posted an event
+const SOURCE_PID_FIELD: u32 = 41;
 const KEY_ESCAPE: i64 = 53;
+const FLAGS_CHANGED: u32 = 12;
+const COMBINED_SESSION_STATE: u32 = 0;
+const ANY_INPUT_EVENT: u32 = u32::MAX;
 /// AVAuthorizationStatusAuthorized
 const AV_AUTHORIZED: isize = 3;
 
@@ -373,6 +384,13 @@ pub fn ask_to_record_screen() {
 pub fn ask_to_post_events() {
   // SAFETY: takes nothing; macOS shows its own prompt
   unsafe { CGRequestPostEventAccess() };
+}
+
+/// Whether a tap that only listens hears keys: Accessibility or Input
+/// Monitoring lets it
+pub fn may_listen_to_keys() -> bool {
+  // SAFETY: takes nothing, only reads the permission
+  unsafe { CGPreflightListenEventAccess() }
 }
 
 /// Accessibility, which posting keys to an app needs
@@ -594,6 +612,27 @@ pub fn next_click() -> Result<Option<Point>, String> {
   Ok(pick.click)
 }
 
+/// Seconds since the human last used a keyboard or pointer
+pub fn idle() -> f64 {
+  // SAFETY: only reads the window server's event times
+  unsafe {
+    CGEventSourceSecondsSinceLastEventType(
+      COMBINED_SESSION_STATE,
+      ANY_INPUT_EVENT,
+    )
+  }
+}
+
+pub fn locked() -> bool {
+  // SAFETY: returns a +1 dictionary, or null outside a login session
+  let session = unsafe { CGSessionCopyCurrentDictionary() };
+  if session.is_null() {
+    return false;
+  }
+  let session = Owned(session);
+  Dict(session.0).bool("CGSSessionScreenIsLocked")
+}
+
 /// Whether the human let this program record the microphone
 pub fn may_record_audio() -> bool {
   // SAFETY: calls +[AVCaptureDevice authorizationStatusForMediaType:],
@@ -606,6 +645,142 @@ pub fn may_record_audio() -> bool {
       std::mem::transmute(objc_msgSend as *const ());
     send(class, selector, AVMediaTypeAudio) == AV_AUTHORIZED
   }
+}
+
+pub const KEYS_NEED: &str = "the dictation key needs Accessibility";
+/// Why a microphone may send only silence
+pub const MIC_SILENT: &str = "check Microphone in System Settings";
+
+/// A key the dictation listens for
+pub enum Key {
+  /// A modifier key changed: its keycode, the flags it left, and the pid
+  /// of the process that posted it, 0 for the keyboard
+  Modifier {
+    code: i64,
+    flags: u64,
+    from: i64,
+  },
+  Escape,
+  Other {
+    from: i64,
+  },
+}
+
+/// A key that dictates while held
+pub struct DictationKey {
+  pub name: &'static str,
+  code: i64,
+  /// The device flag of this key alone, apart from its twin on the
+  /// other side
+  flag: u64,
+}
+
+pub const DICTATION_KEYS: &[DictationKey] = &[
+  DictationKey {
+    name: "right-super",
+    code: 54,
+    flag: 0x10,
+  },
+  DictationKey {
+    name: "right-alt",
+    code: 61,
+    flag: 0x40,
+  },
+  DictationKey {
+    name: "right-control",
+    code: 62,
+    flag: 0x2000,
+  },
+  DictationKey {
+    name: "right-shift",
+    code: 60,
+    flag: 0x4,
+  },
+  DictationKey {
+    name: "fn",
+    code: 63,
+    flag: 0x80_0000,
+  },
+];
+
+impl DictationKey {
+  /// Whether a modifier change pressed or released this key, if it's
+  /// this one
+  pub fn down(&self, key: &Key) -> Option<bool> {
+    match key {
+      Key::Modifier { code, flags, .. } if *code == self.code => {
+        Some(flags & self.flag != 0)
+      }
+      _ => None,
+    }
+  }
+}
+
+struct Keys {
+  tap: CFTypeRef,
+  on: Box<dyn FnMut(Key)>,
+}
+
+extern "C" fn on_key_event(
+  _: *mut c_void,
+  kind: u32,
+  event: CFTypeRef,
+  info: *mut c_void,
+) -> CFTypeRef {
+  // SAFETY: info is the Keys watch_keys keeps for the run loop's life
+  let keys = unsafe { &mut *info.cast::<Keys>() };
+  let code = unsafe { CGEventGetIntegerValueField(event, KEYCODE_FIELD) };
+  let from = unsafe { CGEventGetIntegerValueField(event, SOURCE_PID_FIELD) };
+  match kind {
+    FLAGS_CHANGED => {
+      let flags = unsafe { CGEventGetFlags(event) };
+      (keys.on)(Key::Modifier { code, flags, from });
+    }
+    KEY_DOWN if code == KEY_ESCAPE => (keys.on)(Key::Escape),
+    KEY_DOWN => (keys.on)(Key::Other { from }),
+    TAP_DISABLED_BY_TIMEOUT => unsafe { CGEventTapEnable(keys.tap, true) },
+    _ => {}
+  }
+  event
+}
+
+/// Calls on for each key the dictation listens for, until the process
+/// ends. on runs on the tap's thread while the window server waits, so it
+/// only hands the key on.
+pub fn watch_keys(on: impl FnMut(Key) + 'static) -> Result<(), String> {
+  let keys = Box::into_raw(Box::new(Keys {
+    tap: std::ptr::null(),
+    on: Box::new(on),
+  }));
+  let mask = [FLAGS_CHANGED, KEY_DOWN]
+    .iter()
+    .fold(0u64, |mask, kind| mask | 1 << kind);
+  // SAFETY: keys lives as long as the process: it's never freed
+  let tap = unsafe {
+    CGEventTapCreate(
+      SESSION_TAP,
+      HEAD_INSERT,
+      TAP_LISTEN,
+      mask,
+      on_key_event,
+      keys.cast(),
+    )
+  };
+  if tap.is_null() {
+    // SAFETY: the tap that would use it was never made
+    drop(unsafe { Box::from_raw(keys) });
+    return Err(
+      "can't watch the dictation key: hunch-seat needs Accessibility".into(),
+    );
+  }
+  // SAFETY: valid tap and run loop; both live as long as the process
+  unsafe {
+    (*keys).tap = tap;
+    let source = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
+    CFRunLoopRun();
+  }
+  Ok(())
 }
 
 pub fn pointer() -> Option<Point> {
