@@ -3,8 +3,8 @@
 <img src="hunch.jpg" alt="Thinking out loud with LLM" width="300">
 
 Instead of building workflows around an AI harness, build them around the
-human to augment their intellect [\[1\]][1]. Keep the proven ideas: Unix
-composition, KISS, CSP [\[2\]][2], text as the interface, small tools. LLMs
+human to augment their intellect [3]. Keep the proven ideas: Unix
+composition, KISS, CSP [14], text as the interface, small tools. LLMs
 also excel in the same lean environment.
 
 ## Example: voice in Vim
@@ -61,9 +61,9 @@ tools composed through plain text.
 
 A report is written in [Typst] and read where it looks finished: in
 Firefox. `typst watch --features html` serves the render and reloads the
-page whenever the source changes; [tinymist] previews it as pages.
-[firefox-hunch] serves Firefox to hunch by native messaging; the agent of
-the activity the human is in reads it.
+page whenever the source changes. [firefox-hunch] serves Firefox to
+hunch by native messaging; the agent of the activity the human is in
+reads it.
 
 The human selects a sentence or any other part of the page, a figure, a
 table, corrects it by voice and gets the result back: the agent reads
@@ -73,7 +73,7 @@ reloads.
 ## Why
 
 Engelbart named the goal: augmenting human intellect, "increasing the
-capability of a man to approach a complex problem situation" [\[1\]][1]. He saw
+capability of a man to approach a complex problem situation" [3]. He saw
 the human as part of a system: a Human using Language, Artifacts, Methodology,
 in which he is Trained (H-LAM/T). The system improves as a whole, never by one
 artifact alone.
@@ -93,14 +93,14 @@ agents to the system the human already has:
 
 ## Why not
 
-ACP, the Agent Client Protocol [\[3\]][3]: the editor starts the agent as its
+ACP, the Agent Client Protocol [\[17\]][17]: the editor starts the agent as its
 child and shows it in its own panel. The editor becomes the center instead of
 the human's work, and the agent lives only as long as that editor. The human
 has to use an editor that implements ACP and talk to the agent through its
 panel. Only two programs take part: one editor and its agent. Other agents,
 tools and hosts have no place in it.
 
-MCP, the Model Context Protocol [\[4\]][4]: the AI harness is the center and
+MCP, the Model Context Protocol [\[18\]][18]: the AI harness is the center and
 everything else is its tool. Editor integrations of agents, such as Claude
 Code's, are built on it: the editor runs a server for one vendor's agent, found
 through that vendor's lock files. Each editor implements each vendor's
@@ -124,6 +124,11 @@ agent or an MCP server can serve itself to a workspace through an adapter.
 
 The center is whatever the human works on. People work best focused on one
 thing: switching between too many things breaks the natural flow.
+
+hunch stays at the periphery of the human's attention: a tray, a pill
+while it works, a menu when they open it. It comes to the center when
+they call it and leaves again, as calm technology does [8]; the
+center stays theirs.
 
 Nothing is fixed: models, harnesses, editors, project tools, and the AI tooling
 field itself keep changing. The approach should absorb whatever comes next
@@ -267,7 +272,6 @@ implements.
 [claude-hunch]: https://github.com/roolebo/claude-hunch
 [Handy]: https://handy.computer
 [Typst]: https://typst.app
-[tinymist]: https://github.com/Myriad-Dreamin/tinymist
 [Pipit]: https://www.pipitvoice.com
 [demo]: https://youtu.be/s8I2Pvz_eYo
 
@@ -283,13 +287,53 @@ implements.
 
 ## References
 
-1. Douglas Engelbart, [Augmenting Human Intellect: A Conceptual
-   Framework][1], 1962
-2. C. A. R. Hoare, [Communicating Sequential Processes][2], 1978
-3. [Agent Client Protocol][3]
-4. [Model Context Protocol][4]
+Augmentation:
 
-[1]: https://www.dougengelbart.org/pubs/papers/scanned/Doug_Engelbart-AugmentingHumanIntellect.pdf
-[2]: https://www.cs.cmu.edu/~crary/819-f09/Hoare78.pdf
-[3]: https://agentclientprotocol.com
-[4]: https://modelcontextprotocol.io
+1. Vannevar Bush, As We May Think, The Atlantic, July 1945
+2. J. C. R. Licklider, Man-Computer Symbiosis, 1960,
+   doi:10.1109/THFE2.1960.4503259
+3. Douglas Engelbart, Augmenting Human Intellect: A Conceptual Framework,
+   1962, doi:10.21236/AD0289565
+
+Ubiquitous and calm computing:
+
+4. Mark Weiser, The Computer for the 21st Century, 1991,
+   doi:10.1038/scientificamerican0991-94
+5. Norman Adams, Rich Gold, Bill N. Schilit, Michael Tso, Roy Want, An
+   Infrared Network for Mobile Computers, USENIX, 1993
+6. Bill Schilit, Norman Adams, Roy Want, Context-Aware Computing
+   Applications, 1994, doi:10.1109/WMCSA.1994.16
+7. Roy Want et al., An Overview of the PARCTAB Ubiquitous Computing
+   Experiment, 1995, doi:10.1109/98.475986
+8. Mark Weiser, John Seely Brown, Designing Calm Technology, Xerox PARC,
+   1995
+
+Plan 9 and Inferno:
+
+9. Rob Pike, 8½, the Plan 9 Window System, Summer USENIX, 1991
+10. Rob Pike, Dave Presotto, Ken Thompson, Howard Trickey, Phil
+    Winterbottom, The Use of Name Spaces in Plan 9, 1993,
+    doi:10.1145/155848.155861
+11. Dave Presotto, Phil Winterbottom, The Organization of Networks in
+    Plan 9, Winter USENIX, 1993
+12. Sean Dorward et al., The Inferno Operating System, 1997,
+    doi:10.1002/bltj.2028
+13. Rob Pike, Dennis Ritchie, The Styx Architecture for Distributed
+    Systems, 1999, doi:10.1002/bltj.2169
+
+Software design:
+
+14. C. A. R. Hoare, Communicating Sequential Processes, 1978,
+    doi:10.1145/359576.359585
+15. Peter Naur, Programming as Theory Building, 1985,
+    doi:10.1016/0165-6074(85)90032-8
+16. Fred Brooks, No Silver Bullet: Essence and Accidents of Software
+    Engineering, 1986, doi:10.1109/MC.1987.1663532
+
+Agent protocols:
+
+17. [Agent Client Protocol][17]
+18. [Model Context Protocol][18]
+
+[17]: https://agentclientprotocol.com
+[18]: https://modelcontextprotocol.io

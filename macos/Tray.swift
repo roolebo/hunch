@@ -717,19 +717,17 @@ struct SettingsView: View {
               .foregroundStyle(.secondary)
           }
         }
+      } footer: {
+        Text(
+          "Hunch stays at the periphery of your attention, and comes to "
+            + "the center when you call it."
+        )
+        .foregroundStyle(.secondary)
       }
       SwiftUI.Section("Ideas") {
         credit(
-          "Vannevar Bush", "As We May Think, 1945",
-          "https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/"
-        )
-        credit(
-          "J. C. R. Licklider", "Man-Computer Symbiosis, 1960",
-          "https://groups.csail.mit.edu/medg/people/psz/Licklider.html"
-        )
-        credit(
-          "Douglas Engelbart", "Augmenting Human Intellect, 1962",
-          "https://www.dougengelbart.org/")
+          "hunch's README", "The papers hunch builds on",
+          "https://github.com/roolebo/hunch#references")
       }
       SwiftUI.Section("Built on") {
         credit(

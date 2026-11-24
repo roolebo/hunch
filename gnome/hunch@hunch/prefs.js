@@ -225,13 +225,13 @@ export default class HunchPreferences extends ExtensionPreferences {
       row.add_suffix(new Gtk.Image({icon_name: 'adw-external-link-symbolic'}));
       group.add(row);
     };
-    const ideas = new Adw.PreferencesGroup({title: 'Ideas'});
-    credit(ideas, 'Vannevar Bush', 'As We May Think, 1945',
-      'https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/');
-    credit(ideas, 'J. C. R. Licklider', 'Man-Computer Symbiosis, 1960',
-      'https://groups.csail.mit.edu/medg/people/psz/Licklider.html');
-    credit(ideas, 'Douglas Engelbart', 'Augmenting Human Intellect, 1962',
-      'https://www.dougengelbart.org/');
+    const ideas = new Adw.PreferencesGroup({
+      title: 'Ideas',
+      description: 'Hunch stays at the periphery of your attention, and ' +
+        'comes to the center when you call it',
+    });
+    credit(ideas, "hunch's README", 'The papers hunch builds on',
+      'https://github.com/roolebo/hunch#references');
     page.add(ideas);
     const built = new Adw.PreferencesGroup({title: 'Built on'});
     credit(built, 'ggml', 'Georgi Gerganov and its authors',
