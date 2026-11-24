@@ -153,7 +153,11 @@ test_help() {
 test_wms() {
   call wms
   check status "$STATUS" 0
-  check wms "$OUT" '[]'
+  if macos; then
+    check wms "$OUT" '["macos:"]'
+  else
+    check wms "$OUT" '[]'
+  fi
 }
 
 test_tmux_windows() {
@@ -286,6 +290,15 @@ test_wm_usage() {
   check_has err "$ERR" "unknown STATE"
 }
 
+test_macos_displays() {
+  macos || return 0
+  call wm macos: displays
+  check status "$STATUS" 0
+  check main "$(jq '[.[] | select(.main)] | length' <<< "$OUT")" 1
+  check fields "$(jq -c '.[0] | keys' <<< "$OUT")" \
+    '["height","id","main","name","width","x","y"]'
+}
+
 test_service_runs_once() {
   call serve
   check status "$STATUS" 1
@@ -329,6 +342,21 @@ running() {
 
 none() {
   [ "$(running "$1")" == 0 ]
+}
+
+test_needs() {
+  call needs --all
+  check status "$STATUS" 0
+  if macos; then
+    check grants "$(jq -r '.[].grant' <<< "$OUT" | paste -sd, -)" \
+      "Screen Recording,Accessibility"
+    check fields "$(jq -c '.[0] | keys' <<< "$OUT")" '["for","grant","granted"]'
+  else
+    check grants "$OUT" "[]"
+  fi
+  call needs --now
+  check status "$STATUS" 1
+  check_has err "$ERR" "unknown flag: --now"
 }
 
 run() {

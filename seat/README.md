@@ -24,6 +24,14 @@ Commands of the service itself:
     hunch-seat roles    the roles this build serves, as a JSON array
     hunch-seat wms      the ADDR of each wm not inside another one, as a
                         JSON array
+    hunch-seat needs [--ask] [--all]
+                        what the human has yet to grant the service, as a
+                        JSON array: for each, what it's `for` and the
+                        `grant` in the OS's terms, e.g. Screen Recording;
+                        --ask has the OS ask the human, where it can;
+                        --all lists every grant, each with `granted`
+
+The service never grants itself anything: the human does.
 
 ## Install
 

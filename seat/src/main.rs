@@ -2,6 +2,8 @@
 //! compute dictation uses; README.md says how.
 
 mod error;
+#[cfg(all(feature = "wm", target_os = "macos"))]
+mod macos;
 #[cfg(unix)]
 mod service;
 #[cfg(feature = "wm")]
@@ -14,14 +16,18 @@ const USAGE: &str = "\
 Usage: hunch-seat ROLE [ADDR] COMMAND [ARGUMENTS]
        hunch-seat roles
        hunch-seat wms
+       hunch-seat needs [--ask] [--all]
        hunch-seat serve
 
 Roles:
-  wm ADDR       a window manager, e.g. tmux:/tmp/tmux-1000/default
+  wm ADDR       a window manager, e.g. macos: or tmux:/tmp/tmux-1000/default
 
 hunch-seat ROLE --help lists the commands of ROLE.
 roles prints the roles this hunch-seat is built with.
 wms prints the window managers not inside another one.
+needs prints what the human has yet to grant the service; --ask has the
+OS ask the human for it, where the OS can; --all lists every grant, each
+with whether it's granted.
 serve runs the service, which every other command asks.";
 
 fn run(args: &[String]) -> Result<()> {
@@ -33,6 +39,7 @@ fn run(args: &[String]) -> Result<()> {
     [command] if command == "wms" => {
       println!("{}", serde_json::json!(wms()))
     }
+    [command, flags @ ..] if command == "needs" => needs(flags)?,
     #[cfg(unix)]
     [command] if command == "serve" => service::serve(here, start)?,
     #[cfg(feature = "wm")]
@@ -76,7 +83,10 @@ fn roles() -> Vec<&'static str> {
 }
 
 fn wms() -> Vec<&'static str> {
-  Vec::new()
+  [cfg!(all(feature = "wm", target_os = "macos")).then_some("macos:")]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Whether the command runs in this process rather than in the service:
@@ -86,6 +96,68 @@ fn runs_here(args: &[String]) -> bool {
   std::env::var_os(service::SERVED).is_some()
     || args.first().is_none_or(|arg| arg == "serve" || help(arg))
     || args.get(1).is_some_and(help)
+}
+
+/// A grant the service uses
+struct Grant {
+  what: &'static str,
+  grant: &'static str,
+  granted: bool,
+}
+
+/// The grants this build uses on this host, which depend on its OS
+#[allow(unused_variables, clippy::vec_init_then_push)]
+fn grants(ask: bool) -> Vec<Grant> {
+  #[allow(unused_mut)]
+  let mut grants = Vec::new();
+  #[cfg(all(feature = "wm", target_os = "macos"))]
+  {
+    let screen = macos::may_record_screen();
+    if ask && !screen {
+      macos::ask_to_record_screen();
+    }
+    grants.push(Grant {
+      what: "window titles",
+      grant: "Screen Recording",
+      granted: screen,
+    });
+    let events = macos::may_post_events();
+    if ask && !events {
+      macos::ask_to_post_events();
+    }
+    grants.push(Grant {
+      what: "sending text, picking windows",
+      grant: "Accessibility",
+      granted: events,
+    });
+  }
+  grants
+}
+
+fn needs(flags: &[String]) -> Result<()> {
+  let ask = flags.iter().any(|f| f == "--ask");
+  let all = flags.iter().any(|f| f == "--all");
+  if let Some(flag) = flags.iter().find(|f| *f != "--ask" && *f != "--all") {
+    return Err(Error::Usage(format!("unknown flag: {flag}"), USAGE));
+  }
+  println!("{}", listed(ask, all));
+  Ok(())
+}
+
+/// The grants, as needs prints them: the missing ones, or ALL
+fn listed(ask: bool, all: bool) -> serde_json::Value {
+  let listed: Vec<serde_json::Value> = grants(ask)
+    .into_iter()
+    .filter(|g| all || !g.granted)
+    .map(|g| {
+      let mut need = serde_json::json!({"for": g.what, "grant": g.grant});
+      if all {
+        need["granted"] = g.granted.into();
+      }
+      need
+    })
+    .collect();
+  listed.into()
 }
 
 fn main() -> ExitCode {
