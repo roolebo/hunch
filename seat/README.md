@@ -6,6 +6,8 @@ the compute that runs speech models, and dictation, each a role.
     hunch-seat serve
     hunch-seat ROLE [ADDR] COMMAND [ARGUMENTS]
 
+[WM.md](WM.md) specifies the role `wm`.
+
 ## Service
 
 hunch-seat runs as the human's service, started at login: by the Hunch
