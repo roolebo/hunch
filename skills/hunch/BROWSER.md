@@ -1,22 +1,14 @@
 # Browser protocol
 
-A browser is a participant with role `browser`: the web browser the human
-works in. It registers:
-
-- `role`: `browser`
-- `addr`: where to reach it, e.g. `http://127.0.0.1:8765/SECRET`
-- `handler`: a program that implements the browser protocol for it
-
-To use the browser, run its handler:
-
-    HANDLER ADDR COMMAND [ARGUMENTS]
-
-The browser may run on another host than the handler, e.g. on the machine
-the human sits at, while the agent runs on a remote one.
+The browser is the web browser the human works in. Its extension serves
+it: the browser runs hunch-browser-native, as the native messaging host
+`hunch`, which passes the extension the commands below and serves the
+browser's files (see Files). No port is open and no secret is kept: only
+the browser runs the bridge, and only the human reaches its socket.
 
 Terms:
 
-    TAB         a tab, by an id the browser gives it, unique while it's open
+    TAB         a tab, the browser's BUFFER, as TREE.md says
     SELECTOR    a CSS selector
 
 Commands:
@@ -54,9 +46,38 @@ Rules:
 - Commands only read: none changes a page or what the human sees.
 - Only the active page's content leaves the browser: no addresses, no
   other tabs.
-- The handler never asks the human anything.
+- The extension never asks the human anything.
 
-Exit status:
+## Native messaging
 
-- 0: done
-- 1: failed, the reason is on stderr
+Each message is a JSON object, its length before it in 4 bytes of native
+byte order:
+
+- the extension says `{"hello": {"name": "Firefox"}}` first
+- a command comes as `{"id": 3, "command": "dom", "args": ["#b"]}`
+- the extension replies `{"id": 3, "result": ...}` or `{"id": 3,
+  "error": "..."}`
+- `{"focus": true}` says the human switched to this browser: its bridge
+  takes the socket, so commands go to the browser used last
+
+The human lets the browser run the bridge once, with
+`hunch-browser-native --install`, unless a package installed it for all
+users.
+
+## Files
+
+`seat/browser/` is the browser used last, which hunch-browser-native
+serves at ROOT/sock/browser.sock; in the current activity's workspace
+only (TREE.md). Its files are TREE.md's Buffers, and dom. The only
+buffer is the active tab, as the rules say: context is the command's,
+with its TAB as buffer, and body is read.
+
+    seat/browser/
+      N/
+        dom         read: dom; write SELECTOR first for dom SELECTOR
+
+Errors:
+
+    ENOENT      no browser runs the extension, the activity isn't
+                current, or N isn't the active tab
+    EIO         the extension failed; errstr says why

@@ -1,25 +1,16 @@
 # Editor protocol
 
-An editor is a participant with role `editor`: the editor program the
-human works in. It registers:
-
-- `role`: `editor`
-- `addr`: where to reach it, e.g. `vim-server:/run/user/1000/vim/VIM`
-- `handler`: a program that implements the editor protocol for it
-
-To use the editor, run its handler:
-
-    HANDLER ADDR COMMAND [ARGUMENTS]
-
-Only the handler depends on the editor, so the same commands work with any
+The editor is the program the human edits in: Vim, or any other. Agents
+reach it through `seat/editor/` in their activity's workspace (see
+Files); the editor serves itself to the workspace and answers the
+commands below, as TREE.md's Serve says, so the same files work with any
 editor.
 
 Terms:
 
     FILE        a file, by its absolute path on the editor's host
-    BUFFER      something the editor has open, by an id the editor gives
-                it, unique while it's open; a file's buffer has its FILE as
-                the id
+    BUFFER      the editor's BUFFER, as TREE.md says; a file's buffer has
+                its FILE as the id
     LINE, COL   a position, from 1; COL counts characters, not bytes or
                 screen columns
     OLD, NEW, TEXT
@@ -72,10 +63,35 @@ Rules:
 - Edits never move the human's cursor or view. A change the human can see
   appears in place; any other change is made in the background. Only `open`
   and `review` move the view.
-- The handler never asks the human anything.
+- The editor never asks the human anything.
 
 Exit status:
 
 - 0: done
 - 1: failed, the reason is on stderr
 - 3: the human has unsaved changes in `FILE`; ask them, don't retry
+
+## Files
+
+`seat/editor/` in an activity's workspace (TREE.md) is the editor
+that serves the activity. The files follow Plan 9's acme, an editor that
+serves itself as files. They are TREE.md's Buffers, context and
+selection as the commands print them and body as read gives the whole
+buffer, and these:
+
+    seat/editor/
+      ctl           write a command and its arguments, one per line:
+                    open, reload or review
+      new           write BUFFER, then read: its N
+      N/
+        addr        write OLD
+        data        write NEW: replace, OLD from addr; without addr,
+                    create; a replace drops one final newline of
+                    both
+
+Errors:
+
+    ENOENT      no editor in the activity, or no such N
+    EBUSY       exit status 3
+    EINVAL      ctl: no such command, or wrong arguments
+    EIO         exit status 1; errstr says why
