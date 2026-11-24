@@ -521,11 +521,11 @@ test_seat_context() {
   seat context
   check status "$STATUS" 0
   local fields="error idle key loading locked model opening"
-  fields+=" preload recording submit transcribing warm wm"
+  fields+=" picking preload recording submit target transcribing warm wm"
   check fields "$(jq -r 'keys | join(" ")' <<< "$OUT")" "$fields"
-  local defaults='{"key":"right-super","model":null,'
+  local defaults='{"key":"right-super","model":null,"target":"focus",'
   defaults+='"submit":true,"preload":true,"warm":null}'
-  check defaults "$(jq -c '{key, model, submit, preload, warm}' \
+  check defaults "$(jq -c '{key, model, target, submit, preload, warm}' \
     <<< "$OUT")" "$defaults"
 }
 
@@ -537,14 +537,16 @@ test_seat_settings_stay() {
   seat submit off
   seat preload off
   seat warm 10
+  seat target macos: 1
   seat model org/speech
   check status "$STATUS" 0
   stop
   serve
   seat context
   local settings='{"key":"right-alt","model":"org/speech",'
+  settings+='"target":"macos: 1",'
   settings+='"submit":false,"preload":false,"warm":10}'
-  check settings "$(jq -c '{key, model, submit, preload, warm}' \
+  check settings "$(jq -c '{key, model, target, submit, preload, warm}' \
     <<< "$OUT")" "$settings"
 }
 
@@ -561,6 +563,8 @@ test_seat_errors() {
   seat submit maybe
   check status "$STATUS" 1
   check_has err "$ERR" "unknown command"
+  seat target tmux:/tmp/x %1
+  check status "$STATUS" 1
   seat last
   check status "$STATUS" 1
   check_has err "$ERR" "nothing dictated"

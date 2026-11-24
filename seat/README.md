@@ -54,9 +54,9 @@ inside a model directory.
 ## Dictation
 
 The seat transcribes through the workspace's `inference/`, whichever
-ENDPOINT it mounts, and types the text into the window in focus. It
-sends speech as the first of the model's inputs it writes: Ogg Opus, a
-tenth of WAV's size, or WAV.
+ENDPOINT it mounts, and types the text into the window in focus, or
+into the one the human redirected it to. It sends speech as the first of
+the model's inputs it writes: Ogg Opus, a tenth of WAV's size, or WAV.
 
 ## GNOME
 

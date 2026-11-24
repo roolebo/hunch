@@ -39,6 +39,8 @@ Commands:
   model MODEL           Transcribe with MODEL, one of inference/models
   load                  Load the model now
   eject                 Free the model's memory now
+  target TARGET         Send dictation to TARGET
+  redirect              Let the human pick the window dictation goes to
   submit on|off         Press Enter after the text, or not
   preload on|off        Load the model at start, or at the first dictation
   warm MINUTES|always   Keep the model in GPU memory this long while idle,
@@ -46,13 +48,14 @@ Commands:
   key KEY               Dictate while KEY is held: right-super,
                         right-alt, right-control, right-shift or fn
 
-Dictation goes to the window in focus. Escape cancels it.";
+TARGET is focus, or ADDR WINDOW. Escape cancels a dictation.";
 
 #[cfg(target_os = "macos")]
 const WM: &str = "macos:";
 // The Shell extension serves it (see README.md)
 #[cfg(target_os = "linux")]
 const WM: &str = "gnome:";
+const FOCUS: &str = "focus";
 const NO_MODEL: &str = "no model: pick one in hunch's settings";
 #[cfg(feature = "inference")]
 const WARM_VAR: &str = "GGML_METAL_RESIDENCY_KEEP_ALIVE_S";
@@ -71,6 +74,7 @@ const KEYS_RETRY: Duration = Duration::from_secs(5);
 struct Settings {
   /// The MODEL of the workspace's inference speech goes to
   model: Option<String>,
+  target: String,
   submit: bool,
   key: String,
   /// Load the model at start, rather than at the first dictation
@@ -91,6 +95,8 @@ struct State {
   transcribing: bool,
   /// The model is loading, at start or for a dictation
   loading: bool,
+  /// The human picks the window dictation goes to
+  picking: bool,
   /// The last transcription, in memory only, for the human to copy
   last: Option<String>,
   error: Option<String>,
@@ -122,6 +128,7 @@ fn load() -> Settings {
     .unwrap_or_default();
   Settings {
     model: saved["model"].as_str().map(String::from),
+    target: saved["target"].as_str().unwrap_or(FOCUS).into(),
     submit: saved["submit"].as_bool().unwrap_or(true),
     preload: saved["preload"].as_bool().unwrap_or(true),
     warm: saved["warm"].as_u64(),
@@ -137,6 +144,7 @@ fn save(settings: &Settings) {
   let path = settings_path();
   let json = json!({
       "model": settings.model,
+      "target": settings.target,
       "submit": settings.submit,
       "key": settings.key,
       "preload": settings.preload,
@@ -160,6 +168,7 @@ fn seat() -> &'static Seat {
       opener: false,
       transcribing: false,
       loading: false,
+      picking: false,
       last: None,
       error: None,
       version: 0,
@@ -189,7 +198,9 @@ fn context(state: &State) -> Value {
       "opening": state.opening,
       "transcribing": state.transcribing,
       "loading": state.loading,
+      "picking": state.picking,
       "model": state.settings.model,
+      "target": state.settings.target,
       "submit": state.settings.submit,
       "key": state.settings.key,
       "preload": state.settings.preload,
@@ -478,23 +489,39 @@ fn dictate(
        Transcription",
     ));
   }
-  // How much, never what: the log isn't for the human's words
+  // How much and where, never what: the log isn't for the human's words
   eprintln!(
-    "hunch-seat: dictation sends {} characters",
-    text.chars().count()
+    "hunch-seat: dictation sends {} characters to {}",
+    text.chars().count(),
+    settings.target
   );
-  // Never to another window instead: text that didn't arrive fails, and
-  // waits for the human to copy it
-  deliver(&text, settings.submit).map_err(|e| {
+  // Never to another window instead: text that didn't arrive where the
+  // human meant it to fails, and waits for them to copy it
+  let delivered = deliver(&settings.target, &text, settings.submit);
+  if let Err(Error::Gone(_)) = delivered {
+    // The window picked is closed: the next dictation goes to the focus
+    change(|s| s.settings.target = FOCUS.into());
+    save(&lock().settings);
+  }
+  delivered.map_err(|e| {
     failed(format!("{e}; the text waits in Copy Last Transcription"))
   })
 }
 
-/// Types TEXT into the window in focus
-fn deliver(text: &str, submit: bool) -> Result<()> {
+fn deliver(target: &str, text: &str, submit: bool) -> Result<()> {
   let wm = wm::open(WM)?;
-  let focused = wm.context(None)?.window;
-  let window = focused.ok_or_else(|| failed("no window has the focus"))?.id;
+  let window = match target.split(' ').collect::<Vec<_>>().as_slice() {
+    [FOCUS] => {
+      let focused = wm.context(None)?.window;
+      focused.ok_or_else(|| failed("no window has the focus"))?.id
+    }
+    [WM, window] => window.to_string(),
+    _ => {
+      return Err(failed(format!(
+        "TARGET isn't focus or a window of {WM}: {target}"
+      )));
+    }
+  };
   wm.send(&window, text)?;
   if submit {
     wm.submit(&window)?;
@@ -581,6 +608,22 @@ pub fn run(
       eject()?;
       "ejected".into()
     }
+    ["redirect"] => {
+      change(|s| s.picking = true);
+      let picked = wm::open(WM).and_then(|wm| wm.pick());
+      change(|s| s.picking = false);
+      let window = match picked {
+        // Escape: the human changed their mind, nothing failed
+        Err(Error::Cancelled(_)) => {
+          return writeln!(out, "no window picked")
+            .map_err(|e| failed(format!("can't answer: {e}")));
+        }
+        picked => picked?,
+      };
+      let target = format!("{WM} {window}");
+      set(|s| s.target = target.clone());
+      format!("target {target}")
+    }
     ["devices"] => {
       let mics: Vec<Value> = audio::mics()
         .map_err(failed)?
@@ -616,6 +659,15 @@ pub fn run(
         preload(model.to_string());
       }
       format!("model {model}")
+    }
+    ["target", FOCUS] => {
+      set(|s| s.target = FOCUS.into());
+      "target focus".into()
+    }
+    ["target", WM, window] => {
+      let target = format!("{WM} {window}");
+      set(|s| s.target = target.clone());
+      format!("target {target}")
     }
     ["key", key] => {
       if dictation_key(key).is_none() {
