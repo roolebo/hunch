@@ -34,8 +34,10 @@ if [ "$1" == "-h" -o "$1" == "--help" ]; then
 fi
 [ $# -ge 1 ] || bad_usage
 
-ID=$(hunch find browser) ||
+ID=$(hunch find browser) || {
+  [ $? -eq 1 ] || exit 1
   die "No browser in this tmux window. Register one from a pane of it"
+}
 ADDR=$(hunch get --id "$ID" addr) ||
   die "Browser $ID has no address, restart its server"
 HANDLER=$(hunch get --id "$ID" handler) ||
