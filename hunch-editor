@@ -63,12 +63,18 @@ in_linked_worktree() {
 }
 
 guard() {
+  local found=0
   case "$1" in
     /tmp/*) return 0 ;;
   esac
   in_linked_worktree "$(existing_dir "$1")" && return 0
+  hunch find editor > /dev/null || found=$?
   # No editor is not an error, only the reason to allow the change
-  hunch find editor > /dev/null 2>&1 || return 0
+  [ "$found" -eq 1 ] && return 0
+  if [ "$found" -ne 0 ]; then
+    echo "$1 may have to change through the editor protocol: tmux failed" >&2
+    exit "$MUST_USE_PROTOCOL"
+  fi
   echo "$1 must change through the editor protocol" >&2
   exit "$MUST_USE_PROTOCOL"
 }

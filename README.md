@@ -225,7 +225,7 @@ A reply has the command's `id` and either `result`, any JSON value, or
 `hunch-editor` finds the editor in the registry and runs its handler.
 `hunch-browser` does the same for the browser.
 `hunch-editor guard FILE` exits 2, with the reason on stderr, if FILE must
-change through the editor protocol.
+change through the editor protocol, or may: tmux failed to tell.
 
 The repo comes with the `hunch` skill for agents.
 
